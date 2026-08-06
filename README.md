@@ -63,6 +63,15 @@ how you set it.
   MIDI-bindable targets) and Scenes (`ScenePresetStore`/`SceneState`,
   full-instrument-state snapshots) — ported wholesale from Jerrican's
   preset infrastructure, which is fully data-agnostic
+- MIDI Out: every `PatternCloud` trigger is mirrored as a note on a GM
+  percussion key (channel 10), so Marmite can drive an external drum
+  VST/hardware module from the same generative pattern engine, instead of
+  (or alongside) its own kit
+- Audio export: a Record button captures the exact final mix to a
+  timestamped WAV under `~/Music/Marmite Recordings`, via a
+  background-threaded writer (`AudioRecorder.h`) so the realtime audio
+  callback never blocks on file I/O; "Open Folder" reveals the last
+  recording in Finder
 - An 8-voice card UI (`DrumVoiceRow`) plus a transport row (Play / Stop /
   Reset / Randomize) and an in-app Help popup
 - Headless regression tests for every JUCE-free engine class (10 test
@@ -84,6 +93,7 @@ how you set it.
 - [Sources/MarmiteApp/DelayLine.h](Sources/MarmiteApp/DelayLine.h) — tempo-synced feedback delay
 - [Sources/MarmiteApp/MidiBindingManager.h](Sources/MarmiteApp/MidiBindingManager.h) / [MidiPresetStore.h](Sources/MarmiteApp/MidiPresetStore.h) — MIDI Learn and its named presets
 - [Sources/MarmiteApp/SceneState.h](Sources/MarmiteApp/SceneState.h) / [ScenePresetStore.h](Sources/MarmiteApp/ScenePresetStore.h) — full-state Scene snapshots
+- [Sources/MarmiteApp/AudioRecorder.h](Sources/MarmiteApp/AudioRecorder.h) — background-threaded WAV export of the final mix
 - [Sources/MarmiteApp/FastRandom.h](Sources/MarmiteApp/FastRandom.h) — shared lightweight RNG
 - [Tests/](Tests/) — headless regression tests, one per JUCE-free engine class
 - [build/](build/) — generated build output (gitignored)

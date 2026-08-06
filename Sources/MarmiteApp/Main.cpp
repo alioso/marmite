@@ -100,11 +100,25 @@ public:
             "Full by default (unchanged output).\n\n"
             "OUTPUT / MIDI\n"
             "Output chooses which audio device the instrument plays "
-            "through. MIDI In connects a controller; Bindings opens MIDI "
-            "Learn, where each per-voice control applies to whichever "
-            "voice is currently focused (switch focus with Voice Select "
-            "pads). Scenes saves/loads a full snapshot of every knob and "
-            "toggle (transport state isn't included).\n\n" +
+            "through. MIDI In connects a controller for controlling "
+            "Marmite (MIDI Learn) - it does not trigger drum hits "
+            "directly, the pattern engine plays itself. Bindings opens "
+            "MIDI Learn, where each per-voice control applies to "
+            "whichever voice is currently focused (switch focus with "
+            "Voice Select pads); Transport is bindable too, as a global "
+            "action. MIDI Out mirrors every pattern trigger as a note on "
+            "a GM percussion key (channel 10), so an external drum VST/"
+            "hardware module can be driven by the same generative "
+            "pattern instead of - or alongside - Marmite's own kit. "
+            "Scenes saves/loads a full snapshot of every knob and toggle "
+            "(transport state isn't included).\n\n"
+            "RECORDING\n"
+            "Record captures the exact final mix (everything, post-"
+            "Reverb) to a timestamped WAV under ~/Music/Marmite "
+            "Recordings - click again to stop and finalize the file. "
+            "Independent of the transport: you can record silence as "
+            "easily as a running pattern. \"Open Folder\" reveals the "
+            "most recent recording in Finder.\n\n" +
             juce::String(juce::CharPointer_UTF8("\xc2\xa9")) +
             " 2026 Alban Bailly. All rights reserved.";
 
