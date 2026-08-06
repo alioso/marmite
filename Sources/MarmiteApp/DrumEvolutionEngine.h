@@ -57,6 +57,19 @@ public:
     void resyncDensity(float value) { store(densityCurrent_, densityTarget_, value); }
     void resyncChaos(float value) { store(chaosCurrent_, chaosTarget_, value); }
 
+    // Constrains autonomous Density retargeting to [low, high] instead of
+    // the full 0..1 range every other macro uses. Each voice gets its own
+    // range (set from kInitialVoices, rerolled by Randomize) so the kit
+    // has lasting per-voice character — some voices consistently sparse,
+    // others consistently busy — rather than every voice's density
+    // independently averaging out to "always something playing" over
+    // time. Manual edits (resyncDensity/DrumVoiceRow's slider) ignore
+    // this range entirely; it only shapes where autonomous drift wanders.
+    void setDensityRange(float low, float high) {
+        densityRangeLow_.store(low, std::memory_order_relaxed);
+        densityRangeHigh_.store(high, std::memory_order_relaxed);
+    }
+
     // Called once per sample. Provably inert at amount <= 0.
     void update(DrumVoiceModel& voice, float amount, float speed) {
         if (amount <= 0.0f) {
@@ -69,7 +82,9 @@ public:
             volumeTarget_.store(random_.nextFloat01(), std::memory_order_relaxed);
             toneTarget_.store(random_.nextFloat01(), std::memory_order_relaxed);
             motionTarget_.store(random_.nextFloat01(), std::memory_order_relaxed);
-            densityTarget_.store(random_.nextFloat01(), std::memory_order_relaxed);
+            const float low = densityRangeLow_.load(std::memory_order_relaxed);
+            const float high = densityRangeHigh_.load(std::memory_order_relaxed);
+            densityTarget_.store(low + random_.nextFloat01() * (high - low), std::memory_order_relaxed);
             chaosTarget_.store(random_.nextFloat01(), std::memory_order_relaxed);
         }
 
@@ -136,6 +151,8 @@ private:
     std::atomic<float> motionTarget_{0.5f};
     std::atomic<float> densityCurrent_{0.5f};
     std::atomic<float> densityTarget_{0.5f};
+    std::atomic<float> densityRangeLow_{0.0f};
+    std::atomic<float> densityRangeHigh_{1.0f};
     std::atomic<float> chaosCurrent_{0.5f};
     std::atomic<float> chaosTarget_{0.5f};
     std::atomic<bool> volumeEnabled_{true};

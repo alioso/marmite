@@ -64,6 +64,7 @@ public:
         file << "global.tempo=" << state.tempo << "\n";
         file << "global.evolutionAmount=" << state.evolutionAmount << "\n";
         file << "global.evolutionSpeed=" << state.evolutionSpeed << "\n";
+        file << "global.space=" << state.space << "\n";
         file << "global.reverbRoom=" << state.reverbRoom << "\n";
         file << "global.reverbDecay=" << state.reverbDecay << "\n";
         file << "global.delayBeatFraction=" << state.delayBeatFraction << "\n";
@@ -129,6 +130,7 @@ private:
             if (field == "tempo") state.tempo = value;
             else if (field == "evolutionAmount") state.evolutionAmount = value;
             else if (field == "evolutionSpeed") state.evolutionSpeed = value;
+            else if (field == "space") state.space = value;
             else if (field == "reverbRoom") state.reverbRoom = value;
             else if (field == "reverbDecay") state.reverbDecay = value;
             else if (field == "delayBeatFraction") state.delayBeatFraction = value;

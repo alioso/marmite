@@ -49,10 +49,11 @@ enum class MidiTarget {
     TransportStop,
     TransportReset,
     TransportRandomize,
-    // Global (8).
+    // Global (9).
     Tempo,
     EvolutionAmount,
     EvolutionSpeed,
+    Space,
     ReverbRoom,
     ReverbDecay,
     DelayTime,
@@ -60,7 +61,7 @@ enum class MidiTarget {
     MasterVolume,
 };
 
-inline constexpr std::array<MidiTarget, 31> kAllMidiTargets{
+inline constexpr std::array<MidiTarget, 32> kAllMidiTargets{
     MidiTarget::VoiceVolume,
     MidiTarget::VoiceTone,
     MidiTarget::VoiceMotion,
@@ -87,6 +88,7 @@ inline constexpr std::array<MidiTarget, 31> kAllMidiTargets{
     MidiTarget::Tempo,
     MidiTarget::EvolutionAmount,
     MidiTarget::EvolutionSpeed,
+    MidiTarget::Space,
     MidiTarget::ReverbRoom,
     MidiTarget::ReverbDecay,
     MidiTarget::DelayTime,
@@ -124,6 +126,7 @@ inline const char* midiTargetName(MidiTarget target) {
         case MidiTarget::Tempo: return "Tempo";
         case MidiTarget::EvolutionAmount: return "EvolutionAmount";
         case MidiTarget::EvolutionSpeed: return "EvolutionSpeed";
+        case MidiTarget::Space: return "Space";
         case MidiTarget::ReverbRoom: return "ReverbRoom";
         case MidiTarget::ReverbDecay: return "ReverbDecay";
         case MidiTarget::DelayTime: return "DelayTime";

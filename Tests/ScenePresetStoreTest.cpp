@@ -38,6 +38,7 @@ SceneState makeTestScene() {
     scene.tempo = 140.0f;
     scene.evolutionAmount = 0.42f;
     scene.evolutionSpeed = 0.77f;
+    scene.space = 0.6f;
     scene.reverbRoom = 0.33f;
     scene.reverbDecay = 0.66f;
     scene.delayBeatFraction = 0.25f;
@@ -65,6 +66,7 @@ void assertScenesEqual(const SceneState& a, const SceneState& b) {
     assert(std::abs(a.tempo - b.tempo) < 1e-4f);
     assert(std::abs(a.evolutionAmount - b.evolutionAmount) < 1e-4f);
     assert(std::abs(a.evolutionSpeed - b.evolutionSpeed) < 1e-4f);
+    assert(std::abs(a.space - b.space) < 1e-4f);
     assert(std::abs(a.reverbRoom - b.reverbRoom) < 1e-4f);
     assert(std::abs(a.reverbDecay - b.reverbDecay) < 1e-4f);
     assert(std::abs(a.delayBeatFraction - b.delayBeatFraction) < 1e-4f);
@@ -150,6 +152,11 @@ int main() {
         b.voices[2].toneEvoEnabled = !b.voices[2].toneEvoEnabled;
         assert(!(a == b));
         b.voices[2].toneEvoEnabled = a.voices[2].toneEvoEnabled;
+        assert(a == b);
+
+        b.space += 0.3f;
+        assert(!(a == b));
+        b.space = a.space;
         assert(a == b);
 
         b.masterVolume += 0.5f;

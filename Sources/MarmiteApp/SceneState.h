@@ -31,6 +31,7 @@ struct SceneState {
     float tempo = 120.0f;
     float evolutionAmount = 0.0f;
     float evolutionSpeed = 0.5f;
+    float space = 1.0f;
     float reverbRoom = 0.0f;
     float reverbDecay = 0.0f;
     float delayBeatFraction = 0.5f;
@@ -65,7 +66,7 @@ inline bool operator==(const SceneState& a, const SceneState& b) {
         }
     }
     return nearlyEqual(a.tempo, b.tempo) && nearlyEqual(a.evolutionAmount, b.evolutionAmount) &&
-           nearlyEqual(a.evolutionSpeed, b.evolutionSpeed) &&
+           nearlyEqual(a.evolutionSpeed, b.evolutionSpeed) && nearlyEqual(a.space, b.space) &&
            nearlyEqual(a.reverbRoom, b.reverbRoom) && nearlyEqual(a.reverbDecay, b.reverbDecay) &&
            nearlyEqual(a.delayBeatFraction, b.delayBeatFraction) &&
            nearlyEqual(a.delayFeedback, b.delayFeedback) &&

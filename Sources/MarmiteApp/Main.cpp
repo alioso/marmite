@@ -22,6 +22,7 @@
 #include "SampleVoicePool.h"
 #include "SceneState.h"
 #include "ScenePresetStore.h"
+#include "SpaceEvolver.h"
 
 class MarmiteEditor : public juce::AudioAppComponent,
                       private juce::Button::Listener,
@@ -795,7 +796,7 @@ public:
             y = layoutSection(perVoiceSectionLabel_, 0, 11, padding, innerContentWidth, y);
             y = layoutSection(voiceSelectSectionLabel_, 11, 19, padding, innerContentWidth, y);
             y = layoutSection(transportSectionLabel_, 19, 23, padding, innerContentWidth, y);
-            y = layoutSection(globalSectionLabel_, 23, 31, padding, innerContentWidth, y);
+            y = layoutSection(globalSectionLabel_, 23, 32, padding, innerContentWidth, y);
             rowsContainer_.setSize(rowsContentWidth, y + padding);
         }
 
@@ -881,6 +882,7 @@ public:
                 case MidiTarget::Tempo: return "Tempo";
                 case MidiTarget::EvolutionAmount: return "Evolution Amount";
                 case MidiTarget::EvolutionSpeed: return "Evolution Speed";
+                case MidiTarget::Space: return "Space";
                 case MidiTarget::ReverbRoom: return "Reverb Room";
                 case MidiTarget::ReverbDecay: return "Reverb Decay";
                 case MidiTarget::DelayTime: return "Delay Time";
@@ -922,6 +924,7 @@ public:
             const auto& initial = kInitialVoices[i];
             evolutionEngines_[i].resetTo(initial.volume, initial.tone, initial.motion,
                                          initial.density, initial.chaos);
+            evolutionEngines_[i].setDensityRange(initial.densityRangeLow, initial.densityRangeHigh);
         }
 
         audioFormatManager_.registerBasicFormats();
@@ -1008,6 +1011,17 @@ public:
         setUpKnob(evolutionSpeedSlider, evolutionSpeedLabel, "Speed");
         evolutionSpeedSlider.setRange(0.0, 1.0);
         evolutionSpeedSlider.setValue(0.5);
+
+        // Space: how "busy" the whole kit is right now, autonomously
+        // drifting alongside Amount/Speed (see SpaceEvolver.h) so the
+        // ensemble periodically breathes into genuinely sparse passages
+        // instead of 8 independent per-voice densities always averaging
+        // out to "something is playing". 1.0 = no attenuation (today's
+        // behavior), lower values scale every voice's effective density
+        // down together.
+        setUpKnob(spaceSlider, spaceLabel, "Space");
+        spaceSlider.setRange(0.0, 1.0);
+        spaceSlider.setValue(1.0);
 
         addAndMakeVisible(reverbTitleLabel);
         reverbTitleLabel.setText("Reverb", juce::dontSendNotification);
@@ -1134,19 +1148,23 @@ public:
                               knobSize + knobTextBoxHeight);
 
         const int evolutionBlockX = tempoBlockX + knobColumnWidth + 30;
-        const int evolutionBlockWidth = knobColumnWidth * 2;
+        const int evolutionBlockWidth = knobColumnWidth * 3;
         const int evolutionTitleTop = knobLabelTop - titleGap - titleHeight;
         evolutionTitleLabel.setBounds(evolutionBlockX, evolutionTitleTop, evolutionBlockWidth,
                                       titleHeight);
 
         const int amountColumnX = evolutionBlockX;
         const int speedColumnX = evolutionBlockX + knobColumnWidth;
+        const int spaceColumnX = evolutionBlockX + knobColumnWidth * 2;
         evolutionAmountLabel.setBounds(amountColumnX, knobLabelTop, knobColumnWidth, knobLabelHeight);
         evolutionAmountSlider.setBounds(amountColumnX + (knobColumnWidth - knobSize) / 2, knobBoxTop,
                                         knobSize, knobSize + knobTextBoxHeight);
         evolutionSpeedLabel.setBounds(speedColumnX, knobLabelTop, knobColumnWidth, knobLabelHeight);
         evolutionSpeedSlider.setBounds(speedColumnX + (knobColumnWidth - knobSize) / 2, knobBoxTop,
                                        knobSize, knobSize + knobTextBoxHeight);
+        spaceLabel.setBounds(spaceColumnX, knobLabelTop, knobColumnWidth, knobLabelHeight);
+        spaceSlider.setBounds(spaceColumnX + (knobColumnWidth - knobSize) / 2, knobBoxTop, knobSize,
+                              knobSize + knobTextBoxHeight);
 
         // Reverb: same title-over-two-knobs shape as Evolution.
         const int reverbBlockX = evolutionBlockX + evolutionBlockWidth + 30;
@@ -1433,6 +1451,10 @@ public:
             case MidiTarget::EvolutionSpeed:
                 evolutionSpeed_.store(value, std::memory_order_relaxed);
                 break;
+            case MidiTarget::Space:
+                spaceDisplay_.store(value, std::memory_order_relaxed);
+                spaceEvolver_.resync(value);
+                break;
             case MidiTarget::ReverbRoom:
                 reverbRoom_.store(value, std::memory_order_relaxed);
                 break;
@@ -1495,6 +1517,7 @@ public:
         scene.tempo = static_cast<float>(tempoSlider.getValue());
         scene.evolutionAmount = evolutionAmount_.load(std::memory_order_relaxed);
         scene.evolutionSpeed = evolutionSpeed_.load(std::memory_order_relaxed);
+        scene.space = spaceDisplay_.load(std::memory_order_relaxed);
         scene.reverbRoom = reverbRoom_.load(std::memory_order_relaxed);
         scene.reverbDecay = reverbDecay_.load(std::memory_order_relaxed);
         scene.delayBeatFraction = delayBeatFraction_.load(std::memory_order_relaxed);
@@ -1534,6 +1557,8 @@ public:
         patternClock_.setBpm(scene.tempo);
         evolutionAmount_.store(scene.evolutionAmount, std::memory_order_relaxed);
         evolutionSpeed_.store(scene.evolutionSpeed, std::memory_order_relaxed);
+        spaceDisplay_.store(scene.space, std::memory_order_relaxed);
+        spaceEvolver_.resync(scene.space);
         reverbRoom_.store(scene.reverbRoom, std::memory_order_relaxed);
         reverbDecay_.store(scene.reverbDecay, std::memory_order_relaxed);
         delayBeatFraction_.store(scene.delayBeatFraction, std::memory_order_relaxed);
@@ -1542,6 +1567,7 @@ public:
 
         refreshGlobalKnobFromAtomic(evolutionAmountSlider, evolutionAmount_);
         refreshGlobalKnobFromAtomic(evolutionSpeedSlider, evolutionSpeed_);
+        refreshGlobalKnobFromAtomic(spaceSlider, spaceDisplay_);
         refreshGlobalKnobFromAtomic(roomSlider, reverbRoom_);
         refreshGlobalKnobFromAtomic(decaySlider, reverbDecay_);
         refreshGlobalKnobFromAtomic(delayFeedbackSlider, delayFeedback_);
@@ -1595,22 +1621,43 @@ public:
             voices_[i].setChaos(initial.chaos);
             evolutionEngines_[i].resetTo(initial.volume, initial.tone, initial.motion,
                                          initial.density, initial.chaos);
+            evolutionEngines_[i].setDensityRange(initial.densityRangeLow, initial.densityRangeHigh);
             voiceRows_[i]->refreshFromModel();
             voiceRows_[i]->resetEvolutionToggles();
         }
+        // Space isn't a per-voice control, but it's part of the same
+        // "back to defaults" contract — full busy-ness, matching what
+        // every voice's own density defaults already assume.
+        spaceDisplay_.store(1.0f, std::memory_order_relaxed);
+        spaceEvolver_.resync(1.0f);
         statusLabel.setText("Voices reset to defaults", juce::dontSendNotification);
     }
 
     void handleRandomizePressed() {
         // Rerolls the five macros per voice, regardless of transport
-        // state — matches Jerrican's Randomize scope. Tempo and sample
-        // assignment are identity, not levers, so neither is touched.
+        // state — matches Jerrican's Randomize scope. Tempo, Space, and
+        // sample assignment are identity/ensemble-level, not per-voice
+        // levers, so none of them are touched here.
+        //
+        // Density also gets a freshly rolled range (a random center +
+        // half-width, density itself landing inside it) rather than just
+        // a bare value — so Randomize can hand one voice a narrow,
+        // consistently-sparse range and another a wide, unpredictable
+        // one, instead of every voice sharing the same full 0..1
+        // autonomous-drift range and slowly averaging toward "medium,
+        // always busy" (see DrumEvolutionEngine::setDensityRange).
         for (std::size_t i = 0; i < voices_.size(); ++i) {
             const float volume = randomizeRandom_.nextFloat01();
             const float tone = randomizeRandom_.nextFloat01();
             const float motion = randomizeRandom_.nextFloat01();
-            const float density = randomizeRandom_.nextFloat01();
             const float chaos = randomizeRandom_.nextFloat01();
+
+            const float halfWidth = 0.08f + randomizeRandom_.nextFloat01() * 0.27f;
+            const float center = halfWidth + randomizeRandom_.nextFloat01() * (1.0f - 2.0f * halfWidth);
+            const float densityRangeLow = center - halfWidth;
+            const float densityRangeHigh = center + halfWidth;
+            const float density =
+                densityRangeLow + randomizeRandom_.nextFloat01() * (densityRangeHigh - densityRangeLow);
 
             voices_[i].setVolume(volume);
             voices_[i].setTone(tone);
@@ -1618,6 +1665,7 @@ public:
             voices_[i].setDensity(density);
             voices_[i].setChaos(chaos);
             evolutionEngines_[i].resetTo(volume, tone, motion, density, chaos);
+            evolutionEngines_[i].setDensityRange(densityRangeLow, densityRangeHigh);
             voiceRows_[i]->refreshFromModel();
         }
         statusLabel.setText("Voices randomized", juce::dontSendNotification);
@@ -1649,7 +1697,22 @@ public:
     void applyLoadedSample(std::size_t voiceIndex, const juce::File& file) {
         std::unique_ptr<juce::AudioFormatReader> reader(
             audioFormatManager_.createReaderFor(file));
-        if (reader == nullptr || reader->lengthInSamples <= 0) {
+
+        // reader->lengthInSamples is a reader-reported int64 and
+        // reader->numChannels is unsigned — both come straight from the
+        // file's header, which a corrupt or deliberately malformed file
+        // can claim is anything. Narrowing an unbounded int64 to int
+        // (for AudioBuffer's constructor) without a cap risks silent
+        // truncation into a negative/garbage size, and an unbounded
+        // frame count or channel count risks an attacker-controlled huge
+        // allocation (a trivial DoS via one bad file). Reject anything
+        // outside a generous but firm sanity range instead of trusting
+        // the header.
+        constexpr juce::int64 kMaxSourceFrames = 44100LL * 60 * 20;  // 20 minutes at 44.1kHz
+        constexpr unsigned int kMaxChannels = 32;
+        if (reader == nullptr || reader->lengthInSamples <= 0 ||
+            reader->lengthInSamples > kMaxSourceFrames || reader->numChannels == 0 ||
+            reader->numChannels > kMaxChannels) {
             statusLabel.setText("Couldn't read " + file.getFileName(), juce::dontSendNotification);
             return;
         }
@@ -1679,6 +1742,14 @@ public:
         const double ratio = sourceRate / sampleRate_;
         const auto numOutFrames =
             static_cast<std::size_t>(static_cast<double>(numSourceFrames) / ratio);
+        // A file claiming a very low native sample rate would otherwise
+        // blow this count up far past kMaxSourceFrames once divided by a
+        // small ratio — cap it independently rather than trusting the
+        // arithmetic to stay bounded just because the input was.
+        if (numOutFrames == 0 || numOutFrames > static_cast<std::size_t>(kMaxSourceFrames)) {
+            statusLabel.setText("Couldn't read " + file.getFileName(), juce::dontSendNotification);
+            return;
+        }
         resampled.samples.resize(numOutFrames);
         for (std::size_t i = 0; i < numOutFrames; ++i) {
             const double sourcePosition = static_cast<double>(i) * ratio;
@@ -1708,6 +1779,10 @@ public:
         } else if (slider == &evolutionSpeedSlider) {
             evolutionSpeed_.store(static_cast<float>(evolutionSpeedSlider.getValue()),
                                   std::memory_order_relaxed);
+        } else if (slider == &spaceSlider) {
+            const float value = static_cast<float>(spaceSlider.getValue());
+            spaceDisplay_.store(value, std::memory_order_relaxed);
+            spaceEvolver_.resync(value);
         } else if (slider == &roomSlider) {
             reverbRoom_.store(static_cast<float>(roomSlider.getValue()), std::memory_order_relaxed);
         } else if (slider == &decaySlider) {
@@ -1802,15 +1877,18 @@ public:
             float mixedLeft = 0.0f;
             float mixedRight = 0.0f;
 
+            const float space = spaceEvolver_.update(playing ? evolutionAmount : 0.0f, evolutionSpeed,
+                                                     sampleRate_, spaceDisplay_);
+
             for (std::size_t i = 0; i < voices_.size(); ++i) {
                 auto& voice = voices_[i];
 
                 evolutionEngines_[i].update(voice, playing ? evolutionAmount : 0.0f, evolutionSpeed);
 
                 if (playing && voice.isEnabled()) {
-                    const auto trigger =
-                        patternClouds_[i].update(onGridBoundary, voice.getDensity(), voice.getChaos(),
-                                                 voice.getMotion(), patternClock_.getSamplesPerSubdivision());
+                    const auto trigger = patternClouds_[i].update(
+                        onGridBoundary, voice.getDensity() * space, voice.getChaos(), voice.getMotion(),
+                        patternClock_.getSamplesPerSubdivision());
                     if (trigger.has_value()) {
                         const float pitchSemitones = (voice.getTone() - 0.5f) * 24.0f;
                         samplePools_[i].trigger(&sampleBuffers_[i], pitchSemitones,
@@ -1864,6 +1942,14 @@ private:
         float motion;
         float density;
         float chaos;
+        // Bounds autonomous Density retargeting (DrumEvolutionEngine::
+        // setDensityRange) — gives each voice a lasting character (some
+        // consistently sparse, some consistently busy) instead of every
+        // voice's density independently averaging toward the same
+        // "medium, always something" over time. Manual edits and
+        // Randomize both ignore this and can set density anywhere.
+        float densityRangeLow;
+        float densityRangeHigh;
     };
 
     // Rough "basic rock kit" starting point: Kick/Snare locked to the
@@ -1872,14 +1958,14 @@ private:
     // demonstrates the Chaos macro's range without the user touching
     // anything yet. Order matches ProceduralKit::makeDefaultKit.
     static constexpr std::array<InitialDrumVoice, 8> kInitialVoices{{
-        {"Kick", true, 0.9f, 0.5f, 0.1f, 0.25f, 0.0f},
-        {"Snare", true, 0.85f, 0.5f, 0.15f, 0.15f, 0.05f},
-        {"Clap", true, 0.6f, 0.5f, 0.15f, 0.08f, 0.1f},
-        {"Closed Hat", true, 0.5f, 0.5f, 0.2f, 0.8f, 0.1f},
-        {"Open Hat", true, 0.45f, 0.5f, 0.2f, 0.1f, 0.15f},
-        {"Perc", true, 0.4f, 0.5f, 0.3f, 0.2f, 0.3f},
-        {"Crash", true, 0.55f, 0.5f, 0.2f, 0.03f, 0.1f},
-        {"Glitch", true, 0.35f, 0.5f, 0.4f, 0.06f, 0.7f},
+        {"Kick", true, 0.9f, 0.5f, 0.1f, 0.25f, 0.0f, 0.10f, 0.45f},
+        {"Snare", true, 0.85f, 0.5f, 0.15f, 0.15f, 0.05f, 0.05f, 0.35f},
+        {"Clap", true, 0.6f, 0.5f, 0.15f, 0.08f, 0.1f, 0.0f, 0.25f},
+        {"Closed Hat", true, 0.5f, 0.5f, 0.2f, 0.8f, 0.1f, 0.4f, 1.0f},
+        {"Open Hat", true, 0.45f, 0.5f, 0.2f, 0.1f, 0.15f, 0.0f, 0.3f},
+        {"Perc", true, 0.4f, 0.5f, 0.3f, 0.2f, 0.3f, 0.0f, 0.5f},
+        {"Crash", true, 0.55f, 0.5f, 0.2f, 0.03f, 0.1f, 0.0f, 0.15f},
+        {"Glitch", true, 0.35f, 0.5f, 0.4f, 0.06f, 0.7f, 0.0f, 0.6f},
     }};
 
     static VoiceModel makeVoiceModel(const InitialDrumVoice& initial) {
@@ -1924,6 +2010,8 @@ private:
     juce::Slider evolutionAmountSlider;
     juce::Label evolutionSpeedLabel;
     juce::Slider evolutionSpeedSlider;
+    juce::Label spaceLabel;
+    juce::Slider spaceSlider;
     juce::Label reverbTitleLabel;
     juce::Label roomLabel;
     juce::Slider roomSlider;
@@ -1942,6 +2030,8 @@ private:
     std::atomic<bool> isPlaying_{false};
     std::atomic<float> evolutionAmount_{0.0f};
     std::atomic<float> evolutionSpeed_{0.5f};
+    std::atomic<float> spaceDisplay_{1.0f};
+    SpaceEvolver spaceEvolver_{0x1e7ad03u};
     std::atomic<float> reverbRoom_{0.0f};
     std::atomic<float> reverbDecay_{0.0f};
     std::atomic<float> delayFeedback_{0.0f};
