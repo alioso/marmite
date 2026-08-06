@@ -149,9 +149,11 @@ public:
                          private juce::Slider::Listener {
     public:
         DrumVoiceRow(DrumVoiceModel& voice, DrumEvolutionEngine& evolutionEngine,
-                    std::function<void()> onLoadSampleClicked)
+                    std::function<void()> onLoadSampleClicked,
+                    std::function<void()> onClearSampleClicked)
             : voiceRef_(voice), evolutionEngineRef_(evolutionEngine),
-              onLoadSampleClicked_(std::move(onLoadSampleClicked)) {
+              onLoadSampleClicked_(std::move(onLoadSampleClicked)),
+              onClearSampleClicked_(std::move(onClearSampleClicked)) {
             addAndMakeVisible(nameLabel_);
             nameLabel_.setText(voiceRef_.getName(), juce::dontSendNotification);
             nameLabel_.setFont(juce::Font(juce::FontOptions(15.0f)).withStyle(juce::Font::bold));
@@ -187,6 +189,11 @@ public:
             addAndMakeVisible(loadSampleButton_);
             loadSampleButton_.setButtonText("Load Sample...");
             loadSampleButton_.onClick = onLoadSampleClicked_;
+
+            addAndMakeVisible(clearSampleButton_);
+            clearSampleButton_.setButtonText("Clear");
+            clearSampleButton_.setEnabled(false);
+            clearSampleButton_.onClick = onClearSampleClicked_;
         }
 
         void paint(juce::Graphics& g) override {
@@ -260,7 +267,12 @@ public:
             }
 
             const int loadButtonY = toggleRowY + toggleCaptionHeight + 2 + toggleSize + 12;
-            loadSampleButton_.setBounds(padding, loadButtonY, contentWidth, 22);
+            constexpr int clearButtonWidth = 56;
+            constexpr int buttonGap = 6;
+            const int loadButtonWidth = contentWidth - clearButtonWidth - buttonGap;
+            loadSampleButton_.setBounds(padding, loadButtonY, loadButtonWidth, 22);
+            clearSampleButton_.setBounds(padding + loadButtonWidth + buttonGap, loadButtonY,
+                                         clearButtonWidth, 22);
         }
 
         void buttonClicked(juce::Button* button) override {
@@ -361,6 +373,26 @@ public:
                                            juce::dontSendNotification);
         }
 
+        // Reflects which sample is currently loaded (or the default kit,
+        // or a broken reference) onto the Load Sample button — the
+        // MarmiteEditor-owned sampleFiles_ array is the source of truth,
+        // this is purely a display update, same relationship
+        // refreshFromModel() has with DrumVoiceModel.
+        void refreshSampleLabel(const juce::File& file, bool missing) {
+            if (file == juce::File()) {
+                loadSampleButton_.setButtonText("Load Sample...");
+                loadSampleButton_.setColour(juce::TextButton::textColourOffId,
+                                            MarmiteTheme::textPrimary);
+                clearSampleButton_.setEnabled(false);
+                return;
+            }
+
+            loadSampleButton_.setButtonText((missing ? "Missing: " : "") + file.getFileName());
+            loadSampleButton_.setColour(juce::TextButton::textColourOffId,
+                                        missing ? MarmiteTheme::danger : MarmiteTheme::textPrimary);
+            clearSampleButton_.setEnabled(true);
+        }
+
     private:
         static constexpr std::size_t kEvolutionToggleCount = 5;
         static constexpr const char* kEvolutionCaptions[kEvolutionToggleCount] = {
@@ -411,6 +443,7 @@ public:
         DrumVoiceModel& voiceRef_;
         DrumEvolutionEngine& evolutionEngineRef_;
         std::function<void()> onLoadSampleClicked_;
+        std::function<void()> onClearSampleClicked_;
         int dividerY_ = 0;
         bool focused_ = false;
 
@@ -423,6 +456,7 @@ public:
         juce::ToggleButton volumeEvoToggle_, toneEvoToggle_, motionEvoToggle_, densityEvoToggle_,
             chaosEvoToggle_;
         juce::TextButton loadSampleButton_;
+        juce::TextButton clearSampleButton_;
     };
 
     // Shared preset row (Combo + Override/Revert/Save As/Delete), used by
@@ -1039,7 +1073,8 @@ public:
 
         for (std::size_t i = 0; i < voices_.size(); ++i) {
             voiceRows_[i] = std::make_unique<DrumVoiceRow>(
-                voices_[i], evolutionEngines_[i], [this, i] { loadSampleForVoice(i); });
+                voices_[i], evolutionEngines_[i], [this, i] { loadSampleForVoice(i); },
+                [this, i] { clearSample(i); });
             addAndMakeVisible(*voiceRows_[i]);
         }
 
@@ -1733,6 +1768,9 @@ public:
             voiceScene.motionEvoEnabled = evolution.isMotionEnabled();
             voiceScene.densityEvoEnabled = evolution.isDensityEnabled();
             voiceScene.chaosEvoEnabled = evolution.isChaosEnabled();
+            voiceScene.samplePath = sampleFiles_[i] == juce::File()
+                                        ? std::string()
+                                        : sampleFiles_[i].getFullPathName().toStdString();
         }
         scene.tempo = static_cast<float>(tempoSlider.getValue());
         scene.evolutionAmount = evolutionAmount_.load(std::memory_order_relaxed);
@@ -1768,6 +1806,19 @@ public:
             evolutionEngines_[i].setMotionEnabled(voiceScene.motionEvoEnabled);
             evolutionEngines_[i].setDensityEnabled(voiceScene.densityEvoEnabled);
             evolutionEngines_[i].setChaosEnabled(voiceScene.chaosEvoEnabled);
+
+            // Recall the loaded sample (if any). A path that no longer
+            // exists, or that fails to load (moved/corrupted/unsupported
+            // since the Scene was saved), falls back to the procedural
+            // default audibly rather than silently breaking, with the
+            // button flagging it so it's not a silent surprise either.
+            const juce::File sampleFile =
+                voiceScene.samplePath.empty() ? juce::File() : juce::File(voiceScene.samplePath);
+            if (sampleFile == juce::File()) {
+                clearSample(i);
+            } else if (!sampleFile.existsAsFile() || !applyLoadedSample(i, sampleFile)) {
+                markSampleMissing(i, sampleFile);
+            }
 
             voiceRows_[i]->refreshFromModel();
             voiceRows_[i]->refreshEvolutionToggles();
@@ -1842,6 +1893,7 @@ public:
             evolutionEngines_[i].resetTo(initial.volume, initial.tone, initial.motion,
                                          initial.density, initial.chaos);
             evolutionEngines_[i].setDensityRange(initial.densityRangeLow, initial.densityRangeHigh);
+            clearSample(i);
             voiceRows_[i]->refreshFromModel();
             voiceRows_[i]->resetEvolutionToggles();
         }
@@ -1914,7 +1966,11 @@ public:
         });
     }
 
-    void applyLoadedSample(std::size_t voiceIndex, const juce::File& file) {
+    // Returns whether the load succeeded — callable both from the file
+    // chooser's callback (a fresh user pick) and from applySceneState (a
+    // path recalled from a saved Scene, which might no longer exist or
+    // might have changed on disk since).
+    bool applyLoadedSample(std::size_t voiceIndex, const juce::File& file) {
         std::unique_ptr<juce::AudioFormatReader> reader(
             audioFormatManager_.createReaderFor(file));
 
@@ -1934,7 +1990,7 @@ public:
             reader->lengthInSamples > kMaxSourceFrames || reader->numChannels == 0 ||
             reader->numChannels > kMaxChannels) {
             statusLabel.setText("Couldn't read " + file.getFileName(), juce::dontSendNotification);
-            return;
+            return false;
         }
 
         const auto numSourceFrames = static_cast<int>(reader->lengthInSamples);
@@ -1968,7 +2024,7 @@ public:
         // arithmetic to stay bounded just because the input was.
         if (numOutFrames == 0 || numOutFrames > static_cast<std::size_t>(kMaxSourceFrames)) {
             statusLabel.setText("Couldn't read " + file.getFileName(), juce::dontSendNotification);
-            return;
+            return false;
         }
         resampled.samples.resize(numOutFrames);
         for (std::size_t i = 0; i < numOutFrames; ++i) {
@@ -1985,9 +2041,37 @@ public:
             sampleBuffers_[voiceIndex] = std::move(resampled);
         }
 
-        statusLabel.setText(juce::String(voices_[voiceIndex].getName()) + ": loaded " +
-                                file.getFileName(),
-                            juce::dontSendNotification);
+        sampleFiles_[voiceIndex] = file;
+        // The voice card's own button now shows the loaded filename
+        // directly (see refreshSampleLabel), so a transient status-bar
+        // echo of the same information is redundant.
+        voiceRows_[voiceIndex]->refreshSampleLabel(file, false);
+        return true;
+    }
+
+    // Reverts a voice back to its procedural default — used by the Clear
+    // button, Reset, and as the fallback when a Scene references a sample
+    // that's missing/unreadable.
+    void clearSample(std::size_t voiceIndex) {
+        {
+            const std::lock_guard<std::mutex> lock(sampleBuffersMutex_);
+            sampleBuffers_[voiceIndex] = defaultKit_[voiceIndex];
+        }
+        sampleFiles_[voiceIndex] = juce::File();
+        voiceRows_[voiceIndex]->refreshSampleLabel(juce::File(), false);
+    }
+
+    // Falls back to the procedural default audibly (same buffer swap as
+    // clearSample) but keeps the path on record and flags the button, so
+    // a missing/broken Scene reference reads as an error state rather
+    // than silently reverting with no explanation.
+    void markSampleMissing(std::size_t voiceIndex, const juce::File& file) {
+        {
+            const std::lock_guard<std::mutex> lock(sampleBuffersMutex_);
+            sampleBuffers_[voiceIndex] = defaultKit_[voiceIndex];
+        }
+        sampleFiles_[voiceIndex] = file;
+        voiceRows_[voiceIndex]->refreshSampleLabel(file, true);
     }
 
     void sliderValueChanged(juce::Slider* slider) override {
@@ -2050,7 +2134,11 @@ public:
         }
         // Procedural kit is synthesized once the real device sample rate
         // is known, so playback pitch is correct regardless of device.
-        sampleBuffers_ = ProceduralKit::makeDefaultKit(sampleRate);
+        // Kept separately from sampleBuffers_ (the live playback array) so
+        // Clear/Reset can restore a voice to its default without
+        // resynthesizing the whole kit each time.
+        defaultKit_ = ProceduralKit::makeDefaultKit(sampleRate);
+        sampleBuffers_ = defaultKit_;
 
         reverb_.setSampleRate(sampleRate);
         delayLine_.setSampleRate(sampleRate);
@@ -2317,6 +2405,14 @@ private:
     std::array<PatternCloud, 8> patternClouds_;
     std::array<SampleVoicePool, 8> samplePools_;
     std::array<SampleBuffer, 8> sampleBuffers_;
+    // The procedurally-synthesized kit, cached at the current sample rate
+    // — what Clear/Reset restore a voice to, without resynthesizing.
+    std::array<SampleBuffer, 8> defaultKit_;
+    // Which file (if any) each voice's sampleBuffers_ entry came from —
+    // empty File() means "using defaultKit_". Source of truth for the
+    // Load Sample button's label and for Scene persistence; DrumVoiceRow
+    // never owns this, only reflects it via refreshSampleLabel().
+    std::array<juce::File, 8> sampleFiles_;
     // Guards sampleBuffers_ against a torn read/write between the audio
     // thread (reads via SamplePlayer's non-owning pointer, potentially
     // across many blocks while a sample rings out) and the message

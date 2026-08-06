@@ -2,16 +2,18 @@
 
 #include <array>
 #include <cmath>
+#include <string>
 
 // A full snapshot of every control's value — every voice's five macros,
-// enabled state, and per-parameter Evolution toggles, plus the global
-// Tempo/Evolution/Reverb/Delay/Volume controls. Deliberately excludes
-// transport run/stop state (isPlaying_ isn't a "control", it's transient
-// session state) — a Scene is "how the instrument is set up", not
-// "whether it's currently making sound". Plain C++, JUCE-free, same
-// convention as MidiBinding — Main.cpp is the only place that
-// reads/writes this against the live DrumVoiceModel/DrumEvolutionEngine/
-// atomics. Ported from Jerrican's SceneState.h.
+// enabled state, per-parameter Evolution toggles, and loaded-sample path,
+// plus the global Tempo/Evolution/Reverb/Delay/Volume controls.
+// Deliberately excludes transport run/stop state (isPlaying_ isn't a
+// "control", it's transient session state) — a Scene is "how the
+// instrument is set up", not "whether it's currently making sound". Plain
+// C++, JUCE-free, same convention as MidiBinding — Main.cpp is the only
+// place that reads/writes this against the live
+// DrumVoiceModel/DrumEvolutionEngine/atomics. Ported from Jerrican's
+// SceneState.h.
 struct VoiceSceneState {
     bool enabled = true;
     float volume = 0.0f;
@@ -24,6 +26,9 @@ struct VoiceSceneState {
     bool motionEvoEnabled = true;
     bool densityEvoEnabled = true;
     bool chaosEvoEnabled = true;
+    // Absolute path of a loaded WAV/AIFF/FLAC/MP3/OGG replacing this
+    // voice's procedural default, or empty to mean "using the default".
+    std::string samplePath;
 };
 
 struct SceneState {
@@ -55,7 +60,7 @@ inline bool operator==(const VoiceSceneState& a, const VoiceSceneState& b) {
            nearlyEqual(a.density, b.density) && nearlyEqual(a.chaos, b.chaos) &&
            a.volumeEvoEnabled == b.volumeEvoEnabled && a.toneEvoEnabled == b.toneEvoEnabled &&
            a.motionEvoEnabled == b.motionEvoEnabled && a.densityEvoEnabled == b.densityEvoEnabled &&
-           a.chaosEvoEnabled == b.chaosEvoEnabled;
+           a.chaosEvoEnabled == b.chaosEvoEnabled && a.samplePath == b.samplePath;
 }
 
 inline bool operator==(const SceneState& a, const SceneState& b) {

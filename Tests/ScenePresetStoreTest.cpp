@@ -34,6 +34,12 @@ SceneState makeTestScene() {
         voice.motionEvoEnabled = true;
         voice.densityEvoEnabled = false;
         voice.chaosEvoEnabled = true;
+        // Only some voices have a loaded sample — exercises both the
+        // populated and empty ("using the default kit") cases in the
+        // same round trip.
+        if (i % 2 == 0) {
+            voice.samplePath = "/Users/test/Music/Samples/voice" + std::to_string(i) + ".wav";
+        }
     }
     scene.tempo = 140.0f;
     scene.evolutionAmount = 0.42f;
@@ -62,6 +68,7 @@ void assertScenesEqual(const SceneState& a, const SceneState& b) {
         assert(va.motionEvoEnabled == vb.motionEvoEnabled);
         assert(va.densityEvoEnabled == vb.densityEvoEnabled);
         assert(va.chaosEvoEnabled == vb.chaosEvoEnabled);
+        assert(va.samplePath == vb.samplePath);
     }
     assert(std::abs(a.tempo - b.tempo) < 1e-4f);
     assert(std::abs(a.evolutionAmount - b.evolutionAmount) < 1e-4f);
@@ -138,6 +145,26 @@ int main() {
         assert(std::abs(loaded.masterVolume - 0.5f) < 1e-4f);
     }
 
+    // samplePath is the one non-numeric field in an otherwise all-float
+    // format — confirm it round-trips correctly and doesn't disturb
+    // parsing of the numeric fields on neighboring lines.
+    {
+        const auto samplePathPath = tempDir / "SamplePath.mscene";
+        std::ofstream sampleFile(samplePathPath);
+        sampleFile << "voice0.volume=0.75\n";
+        sampleFile << "voice0.samplePath=/Users/test/Music/kick.wav\n";
+        sampleFile << "voice1.samplePath=\n";
+        sampleFile << "voice2.volume=0.25\n";
+        sampleFile.close();
+
+        SceneState loaded;
+        assert(store.load("SamplePath", loaded));
+        assert(std::abs(loaded.voices[0].volume - 0.75f) < 1e-4f);
+        assert(loaded.voices[0].samplePath == "/Users/test/Music/kick.wav");
+        assert(loaded.voices[1].samplePath.empty());
+        assert(std::abs(loaded.voices[2].volume - 0.25f) < 1e-4f);
+    }
+
     // operator== — used by PresetControls to detect dirty/matching state.
     {
         const auto a = makeTestScene();
@@ -152,6 +179,11 @@ int main() {
         b.voices[2].toneEvoEnabled = !b.voices[2].toneEvoEnabled;
         assert(!(a == b));
         b.voices[2].toneEvoEnabled = a.voices[2].toneEvoEnabled;
+        assert(a == b);
+
+        b.voices[1].samplePath = "/somewhere/else.wav";
+        assert(!(a == b));
+        b.voices[1].samplePath = a.voices[1].samplePath;
         assert(a == b);
 
         b.space += 0.3f;

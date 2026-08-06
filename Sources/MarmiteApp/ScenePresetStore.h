@@ -60,6 +60,11 @@ public:
             file << prefix << "motionEvoEnabled=" << (voice.motionEvoEnabled ? 1 : 0) << "\n";
             file << prefix << "densityEvoEnabled=" << (voice.densityEvoEnabled ? 1 : 0) << "\n";
             file << prefix << "chaosEvoEnabled=" << (voice.chaosEvoEnabled ? 1 : 0) << "\n";
+            // Not a number — written raw. A path containing a literal
+            // newline would break this line-based format, but that's not
+            // a byte a file dialog or Finder rename ever produces, so
+            // it's not worth escaping for.
+            file << prefix << "samplePath=" << voice.samplePath << "\n";
         }
         file << "global.tempo=" << state.tempo << "\n";
         file << "global.evolutionAmount=" << state.evolutionAmount << "\n";
@@ -108,6 +113,11 @@ private:
         return directory_ / (name + kExtension);
     }
 
+    // samplePath is the one non-numeric field in an otherwise all-float
+    // format — field name is checked before any numeric parse is
+    // attempted, rather than the old shape (parse a float up front, then
+    // dispatch by name), which would have thrown on every sample path and
+    // silently dropped it via the malformed-line catch below.
     static void parseLine(const std::string& line, SceneState& state) {
         const auto equalsPos = line.find('=');
         if (equalsPos == std::string::npos) {
@@ -116,17 +126,12 @@ private:
         const std::string key = line.substr(0, equalsPos);
         const std::string valueToken = line.substr(equalsPos + 1);
 
-        float value = 0.0f;
-        try {
-            value = std::stof(valueToken);
-        } catch (const std::exception&) {
-            // Malformed line (hand-edited or corrupted scene file) — skip
-            // it rather than letting stof's exception crash the app.
-            return;
-        }
-
         if (key.rfind("global.", 0) == 0) {
             const std::string field = key.substr(7);
+            float value = 0.0f;
+            if (!parseFloat(valueToken, value)) {
+                return;
+            }
             if (field == "tempo") state.tempo = value;
             else if (field == "evolutionAmount") state.evolutionAmount = value;
             else if (field == "evolutionSpeed") state.evolutionSpeed = value;
@@ -158,6 +163,16 @@ private:
 
         auto& voice = state.voices[static_cast<std::size_t>(index)];
         const std::string field = key.substr(dotPos + 1);
+
+        if (field == "samplePath") {
+            voice.samplePath = valueToken;
+            return;
+        }
+
+        float value = 0.0f;
+        if (!parseFloat(valueToken, value)) {
+            return;
+        }
         const bool boolValue = value != 0.0f;
         if (field == "enabled") voice.enabled = boolValue;
         else if (field == "volume") voice.volume = value;
@@ -170,6 +185,17 @@ private:
         else if (field == "motionEvoEnabled") voice.motionEvoEnabled = boolValue;
         else if (field == "densityEvoEnabled") voice.densityEvoEnabled = boolValue;
         else if (field == "chaosEvoEnabled") voice.chaosEvoEnabled = boolValue;
+    }
+
+    // Malformed numeric line (hand-edited or corrupted scene file) — skip
+    // it rather than letting stof's exception crash the app.
+    static bool parseFloat(const std::string& token, float& out) {
+        try {
+            out = std::stof(token);
+            return true;
+        } catch (const std::exception&) {
+            return false;
+        }
     }
 
     std::filesystem::path directory_;
