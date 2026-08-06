@@ -24,6 +24,99 @@
 #include "ScenePresetStore.h"
 #include "SpaceEvolver.h"
 
+// Content shown in the help popup (launched from the "?" button next to
+// Output). Read-only, scrollable if the window is short, styled to match
+// the rest of the app rather than the OS-native AlertWindow look. Ported
+// from Jerrican's HelpContent — same shape, rewritten for Marmite's own
+// controls.
+class HelpContent : public juce::Component {
+public:
+    HelpContent() {
+        editor_.setMultiLine(true);
+        editor_.setReadOnly(true);
+        editor_.setScrollbarsShown(true);
+        editor_.setCaretVisible(false);
+        editor_.setPopupMenuEnabled(false);
+        editor_.setColour(juce::TextEditor::backgroundColourId, MarmiteTheme::panel);
+        editor_.setColour(juce::TextEditor::textColourId, MarmiteTheme::textPrimary);
+        editor_.setColour(juce::TextEditor::outlineColourId, MarmiteTheme::panelBorder);
+        editor_.setColour(juce::TextEditor::focusedOutlineColourId, MarmiteTheme::panelBorder);
+        editor_.setFont(juce::Font(juce::FontOptions(12.5f)));
+
+        const juce::String bodyText =
+            "Marmite\n"
+            "A generative drum machine by Alban Bailly.\n\n"
+            "Each of the 8 voices is a PatternCloud: instead of a fixed step "
+            "grid, it decides probabilistically whether/when/how to fire "
+            "against a shared tempo clock, drawing fresh timing/velocity/"
+            "pitch jitter from the ranges you set - so the pattern never "
+            "loops identically twice.\n\n"
+            "TRANSPORT\n"
+            "Play - starts new hits triggering. Stop - halts new triggers "
+            "(already-sounding hits ring out on their own). Reset - snaps "
+            "every voice back to its starting values. Randomize - rerolls "
+            "every voice's levers (and each voice's Density range - see "
+            "below), whether playing or stopped.\n"
+            "Evolution Amount - how often a voice's levers wander on their "
+            "own while playing; 0, or Stop, leaves them alone.\n"
+            "Evolution Speed - how fast a change glides in once Amount "
+            "picks one - near-instant to almost imperceptibly slow.\n\n"
+            "PER-VOICE CONTROLS\n"
+            "Enabled - mutes/unmutes the voice. Volume - overall level.\n"
+            "Tone - sample pitch-shift.\n"
+            "Motion - per-hit pitch/velocity jitter, so a voice \"breathes\" "
+            "instead of repeating identically.\n"
+            "Density - how likely this voice is to fire on any given grid "
+            "subdivision. Autonomous drift stays within a range unique to "
+            "each voice, so some voices stay consistently sparse and "
+            "others consistently busy rather than every voice averaging "
+            "toward the same medium busy-ness over time.\n"
+            "Chaos - the rhythmic sibling of dissonance: 0 locks hits "
+            "exactly to the beat grid (a basic rock 4/4 feel), 1 pushes "
+            "them off-grid with wide, unpredictable timing (IDM/glitch "
+            "territory) - the one macro that lets this instrument span "
+            "that whole range.\n"
+            "Load Sample... - replaces this voice's procedurally-"
+            "synthesized default hit with your own WAV/AIFF/FLAC/MP3/OGG.\n\n"
+            "Each control has its own small Evolution switch (on by "
+            "default, phosphor green) - turn one off to keep it under "
+            "manual control while the rest keep drifting.\n\n"
+            "GLOBAL\n"
+            "Tempo - the shared clock every voice's grid is measured "
+            "against.\n"
+            "Space - how \"busy\" the whole kit is right now. Autonomously "
+            "drifts alongside Evolution Amount/Speed, scaling every "
+            "voice's effective Density together, so the ensemble "
+            "periodically breathes into genuinely sparse, quiet passages "
+            "and back - not just one voice going quiet while the rest "
+            "carry on.\n"
+            "Reverb - Room/Decay, a global send for the whole mix. Both "
+            "are 0 by default (no reverb, output unchanged) and never "
+            "evolve on their own.\n"
+            "Delay - Time (a tempo-synced note division) and Feedback, a "
+            "fixed-level send.\n"
+            "Volume - master output level, applied after everything else. "
+            "Full by default (unchanged output).\n\n"
+            "OUTPUT / MIDI\n"
+            "Output chooses which audio device the instrument plays "
+            "through. MIDI In connects a controller; Bindings opens MIDI "
+            "Learn, where each per-voice control applies to whichever "
+            "voice is currently focused (switch focus with Voice Select "
+            "pads). Scenes saves/loads a full snapshot of every knob and "
+            "toggle (transport state isn't included).\n\n" +
+            juce::String(juce::CharPointer_UTF8("\xc2\xa9")) +
+            " 2026 Alban Bailly. All rights reserved.";
+
+        editor_.setText(bodyText, false);
+        addAndMakeVisible(editor_);
+    }
+
+    void resized() override { editor_.setBounds(getLocalBounds()); }
+
+private:
+    juce::TextEditor editor_;
+};
+
 class MarmiteEditor : public juce::AudioAppComponent,
                       private juce::Button::Listener,
                       private juce::Slider::Listener,
@@ -961,6 +1054,10 @@ public:
 
         addAndMakeVisible(outputDeviceBox);
 
+        addAndMakeVisible(helpButton);
+        helpButton.setButtonText("?");
+        helpButton.onClick = [this] { showHelpPopup(); };
+
         addAndMakeVisible(scenesButton);
         scenesButton.setButtonText("Scenes");
         scenesButton.onClick = [this] { showScenesPopup(); };
@@ -1108,9 +1205,10 @@ public:
         subtitleLabel.setBounds(82, 48, getWidth() - 340, 22);
 
         outputLabel.setBounds(getWidth() - 260, 16, 220, 14);
+        helpButton.setBounds(getWidth() - 292, 32, 24, 24);
         outputDeviceBox.setBounds(getWidth() - 260, 32, 220, 24);
 
-        // MIDI cluster sits left of Output, same top-aligned row.
+        // MIDI cluster sits left of Output/Help, same top-aligned row.
         midiInputLabel.setBounds(getWidth() - 460, 16, 160, 14);
         midiInputDeviceBox.setBounds(getWidth() - 460, 32, 160, 24);
         bindingsButton.setBounds(getWidth() - 548, 32, 80, 24);
@@ -1478,6 +1576,13 @@ public:
                 masterVolume_.store(value, std::memory_order_relaxed);
                 break;
         }
+    }
+
+    void showHelpPopup() {
+        auto content = std::make_unique<HelpContent>();
+        content->setSize(480, 620);
+        juce::CallOutBox::launchAsynchronously(std::move(content), helpButton.getScreenBounds(),
+                                               nullptr);
     }
 
     void showBindingsPopup() {
@@ -1994,6 +2099,7 @@ private:
     juce::Label subtitleLabel;
     juce::Label outputLabel;
     juce::ComboBox outputDeviceBox;
+    juce::TextButton helpButton;
     juce::TextButton scenesButton;
     juce::TextButton bindingsButton;
     juce::Label midiInputLabel;
