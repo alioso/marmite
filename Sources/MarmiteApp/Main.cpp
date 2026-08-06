@@ -7,6 +7,7 @@
 #include <cmath>
 #include <mutex>
 
+#include "AudioRecorder.h"
 #include "DelayLine.h"
 #include "DrumEvolutionEngine.h"
 #include "DrumVoiceModel.h"
@@ -1058,6 +1059,12 @@ public:
         helpButton.setButtonText("?");
         helpButton.onClick = [this] { showHelpPopup(); };
 
+        addAndMakeVisible(recordButton);
+        recordButton.setButtonText("Record");
+        recordButton.setClickingTogglesState(false);
+        recordButton.onClick = [this] { toggleRecording(); };
+        recordingThread_.startThread();
+
         addAndMakeVisible(scenesButton);
         scenesButton.setButtonText("Scenes");
         scenesButton.onClick = [this] { showScenesPopup(); };
@@ -1072,6 +1079,17 @@ public:
         midiInputLabel.setColour(juce::Label::textColourId, MarmiteTheme::textSecondary);
 
         addAndMakeVisible(midiInputDeviceBox);
+
+        // MIDI Out: mirrors every pattern trigger as a note on the
+        // matching GM percussion key (see kVoiceMidiNotes), so Marmite
+        // can drive an external drum VST/hardware instead of — or
+        // alongside — its own procedural/loaded kit.
+        addAndMakeVisible(midiOutputLabel);
+        midiOutputLabel.setText("MIDI Out", juce::dontSendNotification);
+        midiOutputLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
+        midiOutputLabel.setColour(juce::Label::textColourId, MarmiteTheme::textSecondary);
+
+        addAndMakeVisible(midiOutputDeviceBox);
 
         addAndMakeVisible(playButton);
         playButton.setButtonText("Play");
@@ -1180,12 +1198,14 @@ public:
         statusLabel.setFont(juce::Font(juce::FontOptions(14.0f)));
         statusLabel.setColour(juce::Label::textColourId, MarmiteTheme::textSecondary);
 
-        setSize(1600, 820);
+        setSize(1870, 820);
         setAudioChannels(0, 2);
         populateOutputDeviceBox();
         outputDeviceBox.onChange = [this] { outputDeviceSelected(); };
         populateMidiInputBox();
         midiInputDeviceBox.onChange = [this] { midiInputDeviceSelected(); };
+        populateMidiOutputBox();
+        midiOutputDeviceBox.onChange = [this] { midiOutputDeviceSelected(); };
         startTimerHz(30);
     }
 
@@ -1193,6 +1213,8 @@ public:
         if (currentMidiInputId_.isNotEmpty()) {
             deviceManager.removeMidiInputDeviceCallback(currentMidiInputId_, this);
         }
+        recorder_.stop();
+        recordingThread_.stopThread(2000);
         shutdownAudio();
         setLookAndFeel(nullptr);
     }
@@ -1209,10 +1231,13 @@ public:
         outputDeviceBox.setBounds(getWidth() - 260, 32, 220, 24);
 
         // MIDI cluster sits left of Output/Help, same top-aligned row.
-        midiInputLabel.setBounds(getWidth() - 460, 16, 160, 14);
-        midiInputDeviceBox.setBounds(getWidth() - 460, 32, 160, 24);
-        bindingsButton.setBounds(getWidth() - 548, 32, 80, 24);
-        scenesButton.setBounds(getWidth() - 626, 32, 70, 24);
+        midiOutputLabel.setBounds(getWidth() - 442, 16, 140, 14);
+        midiOutputDeviceBox.setBounds(getWidth() - 442, 32, 140, 24);
+        midiInputLabel.setBounds(getWidth() - 592, 16, 140, 14);
+        midiInputDeviceBox.setBounds(getWidth() - 592, 32, 140, 24);
+        bindingsButton.setBounds(getWidth() - 682, 32, 80, 24);
+        scenesButton.setBounds(getWidth() - 762, 32, 70, 24);
+        recordButton.setBounds(getWidth() - 852, 32, 80, 24);
 
         const int bottomY = getHeight() - 20;
 
@@ -1341,6 +1366,35 @@ public:
         slider.addListener(this);
     }
 
+    // Toggled from the Record button. No file-save dialog on start — like
+    // an instrument's own record button rather than a DAW export flow, it
+    // starts immediately into a timestamped file under ~/Music, and Stop
+    // finalizes it. Recording state is independent of the transport: you
+    // can record silence (Stop) as easily as a running pattern.
+    void toggleRecording() {
+        if (recorder_.isRecording()) {
+            recorder_.stop();
+            recordButton.setToggleState(false, juce::dontSendNotification);
+            statusLabel.setText("Recording saved to " + currentRecordingFile_.getFileName(),
+                                juce::dontSendNotification);
+            return;
+        }
+
+        const auto directory =
+            juce::File::getSpecialLocation(juce::File::userMusicDirectory).getChildFile("Marmite Recordings");
+        const auto filename =
+            "Marmite-" + juce::Time::getCurrentTime().formatted("%Y-%m-%d-%H%M%S") + ".wav";
+        currentRecordingFile_ = directory.getChildFile(filename);
+
+        if (recorder_.startRecording(currentRecordingFile_, sampleRate_)) {
+            recordButton.setToggleState(true, juce::dontSendNotification);
+            statusLabel.setText("Recording to " + currentRecordingFile_.getFileName(),
+                                juce::dontSendNotification);
+        } else {
+            statusLabel.setText("Couldn't start recording", juce::dontSendNotification);
+        }
+    }
+
     void populateOutputDeviceBox() {
         outputDeviceBox.clear(juce::dontSendNotification);
 
@@ -1401,6 +1455,40 @@ public:
         currentMidiInputId_ = devices[index].identifier;
         deviceManager.setMidiInputDeviceEnabled(currentMidiInputId_, true);
         deviceManager.addMidiInputDeviceCallback(currentMidiInputId_, this);
+    }
+
+    void populateMidiOutputBox() {
+        midiOutputDeviceBox.clear(juce::dontSendNotification);
+        midiOutputDeviceBox.addItem("None", 1);
+
+        const auto devices = juce::MidiOutput::getAvailableDevices();
+        for (int i = 0; i < devices.size(); ++i) {
+            midiOutputDeviceBox.addItem(devices[i].name, i + 2);
+        }
+        midiOutputDeviceBox.setSelectedId(1, juce::dontSendNotification);
+    }
+
+    // Unlike MIDI In (managed through AudioDeviceManager's callback
+    // registration), AudioDeviceManager has no equivalent concept of a
+    // MIDI *output* device — juce::MidiOutput is opened and owned
+    // directly.
+    void midiOutputDeviceSelected() {
+        midiOutput_.reset();
+        currentMidiOutputId_ = {};
+
+        const int selectedId = midiOutputDeviceBox.getSelectedId();
+        if (selectedId <= 1) {
+            return;  // "None"
+        }
+
+        const auto devices = juce::MidiOutput::getAvailableDevices();
+        const int index = selectedId - 2;
+        if (index < 0 || index >= devices.size()) {
+            return;
+        }
+
+        currentMidiOutputId_ = devices[index].identifier;
+        midiOutput_ = juce::MidiOutput::openDevice(currentMidiOutputId_);
     }
 
     // Runs on the MIDI thread. Every write below goes through the same
@@ -1996,8 +2084,27 @@ public:
                         patternClock_.getSamplesPerSubdivision());
                     if (trigger.has_value()) {
                         const float pitchSemitones = (voice.getTone() - 0.5f) * 24.0f;
-                        samplePools_[i].trigger(&sampleBuffers_[i], pitchSemitones,
-                                                trigger->velocity * voice.getVolume());
+                        const float velocity = trigger->velocity * voice.getVolume();
+                        samplePools_[i].trigger(&sampleBuffers_[i], pitchSemitones, velocity);
+
+                        // Mirrors the trigger out as MIDI, so an external
+                        // drum VST/hardware can be driven by the same
+                        // generative pattern instead of (or alongside)
+                        // the internal kit. sendMessageNow from the
+                        // audio thread isn't hard-realtime-guaranteed,
+                        // but is the standard, widely-used approach for
+                        // this — CoreMIDI dispatch is fast and triggers
+                        // are sparse (a handful of hits per beat, not
+                        // per-sample), so the glitch risk is negligible
+                        // in practice.
+                        if (midiOutput_ != nullptr) {
+                            const auto midiVelocity = static_cast<juce::uint8>(
+                                juce::jlimit(1, 127, static_cast<int>(velocity * 127.0f)));
+                            const int note = kVoiceMidiNotes[i];
+                            midiOutput_->sendMessageNow(
+                                juce::MidiMessage::noteOn(kMidiDrumChannel, note, midiVelocity));
+                            midiOutput_->sendMessageNow(juce::MidiMessage::noteOff(kMidiDrumChannel, note));
+                        }
                     }
                 }
 
@@ -2032,6 +2139,13 @@ public:
             reverb_.setParameters(reverbParams);
             reverb_.processStereo(left, right, bufferToFill.numSamples);
         }
+
+        // Tap the exact signal being sent to the output device — after
+        // every other stage, so a recording matches what's actually
+        // audible. Duplicates left into both channels for mono devices,
+        // since the recorder always writes a stereo file.
+        const float* recordChannels[2] = {left, right != nullptr ? right : left};
+        recorder_.recordBlock(recordChannels, bufferToFill.numSamples);
     }
 
 private:
@@ -2078,6 +2192,22 @@ private:
                           initial.motion, initial.density, initial.chaos);
     }
 
+    // GM percussion key per voice (order matches kInitialVoices/
+    // ProceduralKit::makeDefaultKit), so a generic drum VST/hardware
+    // module receiving MIDI Out lands on roughly the right sound without
+    // any manual mapping. Channel 10 is the GM convention for drums.
+    static constexpr std::array<int, 8> kVoiceMidiNotes{
+        36,  // Kick — Bass Drum 1
+        38,  // Snare — Acoustic Snare
+        39,  // Clap — Hand Clap
+        42,  // Closed Hat — Closed Hi-Hat
+        46,  // Open Hat — Open Hi-Hat
+        47,  // Perc — Low-Mid Tom
+        49,  // Crash — Crash Cymbal 1
+        37,  // Glitch — Side Stick (closest GM stand-in for a non-kit voice)
+    };
+    static constexpr int kMidiDrumChannel = 10;
+
     struct DelayDivision {
         const char* label;
         float beatFraction;
@@ -2100,11 +2230,19 @@ private:
     juce::Label outputLabel;
     juce::ComboBox outputDeviceBox;
     juce::TextButton helpButton;
+    juce::TextButton recordButton;
+    juce::TimeSliceThread recordingThread_{"Marmite Recording Thread"};
+    AudioRecorder recorder_{recordingThread_};
+    juce::File currentRecordingFile_;
     juce::TextButton scenesButton;
     juce::TextButton bindingsButton;
     juce::Label midiInputLabel;
     juce::ComboBox midiInputDeviceBox;
     juce::String currentMidiInputId_;
+    juce::Label midiOutputLabel;
+    juce::ComboBox midiOutputDeviceBox;
+    juce::String currentMidiOutputId_;
+    std::unique_ptr<juce::MidiOutput> midiOutput_;
     juce::TextButton playButton;
     juce::TextButton stopButton;
     juce::TextButton resetButton;
@@ -2196,7 +2334,7 @@ public:
         setUsingNativeTitleBar(true);
         setContentOwned(new MarmiteEditor(), true);
         setResizable(true, true);
-        centreWithSize(1600, 820);
+        centreWithSize(1870, 820);
         setVisible(true);
     }
 

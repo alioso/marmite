@@ -136,9 +136,27 @@ public:
 
         const bool isPlay = button.getButtonText() == "Play";
         const bool isStop = button.getButtonText() == "Stop";
+        const bool isRecord = button.getButtonText() == "Record";
         const bool isActive = button.getToggleState();
         const bool enabled = button.isEnabled();
         auto bounds = button.getLocalBounds().toFloat().reduced(1.0f);
+
+        if (isRecord) {
+            // Outlined ghost while armed-but-idle (echoes Play's own
+            // "outline = not the thing to click right now" language, just
+            // in danger red to signal what this control does); solid red
+            // once actually recording, same filled-vs-outline shift Stop
+            // already uses for "there's something to click here now".
+            g.setColour(MarmiteTheme::panel);
+            g.fillRoundedRectangle(bounds, 8.0f);
+            g.setColour(MarmiteTheme::dangerDeep);
+            g.drawRoundedRectangle(bounds, 8.0f, isActive ? 2.0f : 1.5f);
+            if (isActive) {
+                g.setColour(MarmiteTheme::danger);
+                g.fillRoundedRectangle(bounds.reduced(1.5f), 7.0f);
+            }
+            return;
+        }
 
         if (isPlay && isActive) {
             g.setColour(MarmiteTheme::panel);
@@ -181,16 +199,18 @@ public:
                         bool isButtonDown) override {
         const bool isPlay = button.getButtonText() == "Play";
         const bool isStop = button.getButtonText() == "Stop";
-        if (!isPlay && !isStop) {
+        const bool isRecord = button.getButtonText() == "Record";
+        if (!isPlay && !isStop && !isRecord) {
             LookAndFeel_V4::drawButtonText(g, button, isMouseOverButton, isButtonDown);
             return;
         }
 
         const bool isActive = button.getToggleState();
         const bool enabled = button.isEnabled();
-        const juce::Colour colour = isPlay ? (isActive ? MarmiteTheme::accent : MarmiteTheme::textPrimary)
-                                            : (enabled ? MarmiteTheme::textPrimary
-                                                       : MarmiteTheme::textSecondary);
+        const juce::Colour colour =
+            isPlay ? (isActive ? MarmiteTheme::accent : MarmiteTheme::textPrimary)
+            : isRecord ? (isActive ? MarmiteTheme::textPrimary : MarmiteTheme::danger)
+                       : (enabled ? MarmiteTheme::textPrimary : MarmiteTheme::textSecondary);
 
         const auto bounds = button.getLocalBounds().toFloat();
         const juce::Font font = getTextButtonFont(button, button.getHeight());
@@ -205,6 +225,8 @@ public:
                                                         iconBoxSize, iconBoxSize);
         if (isPlay) {
             drawPlayGlyph(g, iconBounds, colour, isActive);
+        } else if (isRecord) {
+            drawRecordGlyph(g, iconBounds, colour, isActive);
         } else {
             drawStopGlyph(g, iconBounds, colour, enabled);
         }
@@ -279,6 +301,22 @@ private:
             g.fillRoundedRectangle(square, 2.0f);
         } else {
             g.drawRoundedRectangle(square, 2.0f, 1.5f);
+        }
+    }
+
+    // Filled circle while armed-but-idle (the actionable "start" cue,
+    // same filled-primary-icon convention Play's triangle uses); once
+    // recording, swaps to a filled square — the universal "click to stop
+    // this" shape, reusing Stop's own glyph language since that's
+    // literally what clicking it now does.
+    static void drawRecordGlyph(juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour colour,
+                                bool active) {
+        g.setColour(colour);
+        if (!active) {
+            g.fillEllipse(bounds);
+        } else {
+            const auto square = bounds.reduced(bounds.getWidth() * 0.12f);
+            g.fillRoundedRectangle(square, 2.0f);
         }
     }
 
