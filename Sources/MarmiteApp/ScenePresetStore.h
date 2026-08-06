@@ -46,6 +46,32 @@ public:
             return false;
         }
 
+        file << serialize(state);
+        return true;
+    }
+
+    bool load(const std::string& name, SceneState& state) const {
+        if (!isValidPresetName(name)) {
+            return false;
+        }
+
+        std::ifstream file(pathFor(name));
+        if (!file.is_open()) {
+            return false;
+        }
+
+        std::ostringstream buffer;
+        buffer << file.rdbuf();
+        state = deserialize(buffer.str());
+        return true;
+    }
+
+    // Same key=value text shape as the on-disk .mscene format, exposed so
+    // MarmiteAudioProcessor::getStateInformation/setStateInformation can
+    // reuse it for a plugin instance's own state (a different concern
+    // from named preset files, but identical serialization needs).
+    static std::string serialize(const SceneState& state) {
+        std::ostringstream file;
         for (std::size_t i = 0; i < state.voices.size(); ++i) {
             const auto& voice = state.voices[i];
             const std::string prefix = "voice" + std::to_string(i) + ".";
@@ -75,26 +101,17 @@ public:
         file << "global.delayBeatFraction=" << state.delayBeatFraction << "\n";
         file << "global.delayFeedback=" << state.delayFeedback << "\n";
         file << "global.masterVolume=" << state.masterVolume << "\n";
-        return true;
+        return file.str();
     }
 
-    bool load(const std::string& name, SceneState& state) const {
-        if (!isValidPresetName(name)) {
-            return false;
-        }
-
-        std::ifstream file(pathFor(name));
-        if (!file.is_open()) {
-            return false;
-        }
-
-        SceneState loaded;
+    static SceneState deserialize(const std::string& text) {
+        SceneState state;
+        std::istringstream stream(text);
         std::string line;
-        while (std::getline(file, line)) {
-            parseLine(line, loaded);
+        while (std::getline(stream, line)) {
+            parseLine(line, state);
         }
-        state = loaded;
-        return true;
+        return state;
     }
 
     bool remove(const std::string& name) const {
