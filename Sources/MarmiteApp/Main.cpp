@@ -1198,6 +1198,11 @@ public:
         statusLabel.setFont(juce::Font(juce::FontOptions(14.0f)));
         statusLabel.setColour(juce::Label::textColourId, MarmiteTheme::textSecondary);
 
+        addAndMakeVisible(openRecordingFolderButton);
+        openRecordingFolderButton.setButtonText("Open Folder");
+        openRecordingFolderButton.setVisible(false);
+        openRecordingFolderButton.onClick = [this] { currentRecordingFile_.revealToUser(); };
+
         setSize(1870, 820);
         setAudioChannels(0, 2);
         populateOutputDeviceBox();
@@ -1327,8 +1332,16 @@ public:
         masterVolumeSlider.setBounds(volumeBlockX + (volumeBlockWidth - knobSize) / 2, knobBoxTop,
                                      knobSize, knobSize + knobTextBoxHeight);
 
-        const int statusX = volumeBlockX + volumeBlockWidth + 30;
-        statusLabel.setBounds(statusX, bottomY - 24, getWidth() - statusX - 40, 24);
+        // Floated from the right edge (rather than left-anchored after
+        // the knob blocks) so it stays put regardless of window width —
+        // a fixed left-anchor + offset for the button broke as soon as
+        // the window got narrower than expected (e.g. clamped to fit a
+        // smaller screen).
+        constexpr int statusBlockWidth = 300;
+        const int statusRight = getWidth() - 40;
+        statusLabel.setJustificationType(juce::Justification::centredRight);
+        statusLabel.setBounds(statusRight - statusBlockWidth, bottomY - 48, statusBlockWidth, 22);
+        openRecordingFolderButton.setBounds(statusRight - 100, bottomY - 22, 100, 22);
 
         // 4x2 voice-card grid, filling the space between the header and
         // the global transport/knob row above.
@@ -1375,11 +1388,12 @@ public:
         if (recorder_.isRecording()) {
             recorder_.stop();
             recordButton.setToggleState(false, juce::dontSendNotification);
-            statusLabel.setText("Recording saved to " + currentRecordingFile_.getFileName(),
-                                juce::dontSendNotification);
+            statusLabel.setText("Recording saved", juce::dontSendNotification);
+            openRecordingFolderButton.setVisible(true);
             return;
         }
 
+        openRecordingFolderButton.setVisible(false);
         const auto directory =
             juce::File::getSpecialLocation(juce::File::userMusicDirectory).getChildFile("Marmite Recordings");
         const auto filename =
@@ -1388,8 +1402,7 @@ public:
 
         if (recorder_.startRecording(currentRecordingFile_, sampleRate_)) {
             recordButton.setToggleState(true, juce::dontSendNotification);
-            statusLabel.setText("Recording to " + currentRecordingFile_.getFileName(),
-                                juce::dontSendNotification);
+            statusLabel.setText("Recording...", juce::dontSendNotification);
         } else {
             statusLabel.setText("Couldn't start recording", juce::dontSendNotification);
         }
@@ -2270,6 +2283,7 @@ private:
     juce::Label masterVolumeLabel;
     juce::Slider masterVolumeSlider;
     juce::Label statusLabel;
+    juce::TextButton openRecordingFolderButton;
 
     std::atomic<bool> isPlaying_{false};
     std::atomic<float> evolutionAmount_{0.0f};
