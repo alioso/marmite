@@ -62,6 +62,43 @@ int main() {
         assert(std::abs(display.load() - 0.5f) < 0.2f);
     }
 
+    // floor + biased retarget (Space's actual construction in
+    // MarmiteProcessor.h): autonomous drift never goes below the floor,
+    // even after many retargets over a long stretch, while still
+    // reaching high/"busy" territory — the bias only shapes how often
+    // low values get picked, not whether it can ever swell back up.
+    {
+        constexpr float floor = 0.3f;
+        SpaceEvolver evolver(5u, 1.0f, floor, 0.4f);
+        std::atomic<float> display{1.0f};
+        float minSeen = 1.0f;
+        float maxSeen = 0.0f;
+        for (int i = 0; i < static_cast<int>(kSampleRate) * 20; ++i) {
+            const float value = evolver.update(1.0f, 1.0f, kSampleRate, display);
+            minSeen = std::min(minSeen, value);
+            maxSeen = std::max(maxSeen, value);
+        }
+        // Smoothing approaches its target asymptotically rather than
+        // reaching it exactly in finite time, so allow a small epsilon
+        // below the floor rather than an exact bound.
+        assert(minSeen > floor - 0.02f);
+        assert(maxSeen > 0.9f);
+    }
+
+    // A plain-uniform instance (no floor/bias args — matching Wild's
+    // actual construction) is completely unaffected by the floor/bias
+    // feature: it can still reach near-total silence, confirming Wild's
+    // behavior is untouched by adding this to the shared class.
+    {
+        SpaceEvolver evolver(6u, 1.0f);
+        std::atomic<float> display{1.0f};
+        float minSeen = 1.0f;
+        for (int i = 0; i < static_cast<int>(kSampleRate) * 20; ++i) {
+            minSeen = std::min(minSeen, evolver.update(1.0f, 1.0f, kSampleRate, display));
+        }
+        assert(minSeen < 0.1f);
+    }
+
     std::cout << "SpaceEvolver tests passed" << std::endl;
     return 0;
 }

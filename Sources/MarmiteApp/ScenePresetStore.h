@@ -101,6 +101,7 @@ public:
         file << "global.delayBeatFraction=" << state.delayBeatFraction << "\n";
         file << "global.delayFeedback=" << state.delayFeedback << "\n";
         file << "global.masterVolume=" << state.masterVolume << "\n";
+        file << "global.wild=" << state.wild << "\n";
         return file.str();
     }
 
@@ -158,6 +159,7 @@ private:
             else if (field == "delayBeatFraction") state.delayBeatFraction = value;
             else if (field == "delayFeedback") state.delayFeedback = value;
             else if (field == "masterVolume") state.masterVolume = value;
+            else if (field == "wild") state.wild = value;
             return;
         }
 

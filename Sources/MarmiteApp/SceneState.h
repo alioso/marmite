@@ -42,6 +42,10 @@ struct SceneState {
     float delayBeatFraction = 0.5f;
     float delayFeedback = 0.0f;
     float masterVolume = 1.0f;
+    // Global baseline on the ACDC(0)/Jungle(0.5)/Squarepusher(1) groove-
+    // complexity curve — see GroovePattern.h. Each voice's Busy knob
+    // offsets around this baseline.
+    float wild = 0.0f;
 };
 
 namespace SceneStateDetail {
@@ -75,5 +79,5 @@ inline bool operator==(const SceneState& a, const SceneState& b) {
            nearlyEqual(a.reverbRoom, b.reverbRoom) && nearlyEqual(a.reverbDecay, b.reverbDecay) &&
            nearlyEqual(a.delayBeatFraction, b.delayBeatFraction) &&
            nearlyEqual(a.delayFeedback, b.delayFeedback) &&
-           nearlyEqual(a.masterVolume, b.masterVolume);
+           nearlyEqual(a.masterVolume, b.masterVolume) && nearlyEqual(a.wild, b.wild);
 }

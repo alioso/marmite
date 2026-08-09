@@ -11,10 +11,11 @@
 #include "DrumEvolutionEngine.h"
 #include "DrumVoiceModel.h"
 #include "FastRandom.h"
+#include "GroovePattern.h"
+#include "GrooveProfiles.h"
 #include "MidiBindingManager.h"
 #include "MidiPresetStore.h"
 #include "PatternClock.h"
-#include "PatternCloud.h"
 #include "ProceduralKit.h"
 #include "SampleVoicePool.h"
 #include "SceneState.h"
@@ -23,7 +24,7 @@
 
 class MarmiteAudioProcessorEditor;  // defined in MarmiteEditor.h, included at the bottom.
 
-// Owns every piece of live engine state (voices, pattern clouds,
+// Owns every piece of live engine state (voices, groove patterns,
 // evolution, reverb/delay, MIDI Learn/Scenes stores, sample buffers, the
 // recorder) and does all audio/MIDI processing — the AudioProcessor half
 // of the Processor/Editor split. Any juce::Component work belongs in
@@ -82,6 +83,11 @@ public:
     };
     static constexpr int kMidiDrumChannel = 10;
 
+    // How far a voice's Busy knob can push that voice's effective Wild
+    // away from the room's global Wild baseline. The knob's own 0.5
+    // center means "no offset, follow the room exactly."
+    static constexpr float kWildSpread = 0.8f;
+
     struct DelayDivision {
         const char* label;
         float beatFraction;
@@ -112,10 +118,16 @@ public:
                              DrumEvolutionEngine(0xa9c3f501u), DrumEvolutionEngine(0xe1d47b6au),
                              DrumEvolutionEngine(0x2c5f9a3du), DrumEvolutionEngine(0x8b1e64f7u),
                              DrumEvolutionEngine(0xf4d27a19u), DrumEvolutionEngine(0x593bce82u)},
-          patternClouds_{PatternCloud(0x1a2b3c4du), PatternCloud(0x5e6f7081u),
-                         PatternCloud(0x92a3b4c5u), PatternCloud(0xd6e7f809u),
-                         PatternCloud(0x4b8e2c61u), PatternCloud(0x7f19d3a2u),
-                         PatternCloud(0xc03e6b58u), PatternCloud(0x2d9a17f4u)} {
+          groovePatterns_{
+              GroovePattern(0x6a1c2e3du, *GrooveProfiles::kByVoiceIndex[0]),
+              GroovePattern(0x1f4b8d9au, *GrooveProfiles::kByVoiceIndex[1]),
+              GroovePattern(0x9c3e7a2bu, *GrooveProfiles::kByVoiceIndex[2]),
+              GroovePattern(0x5d8f1c4eu, *GrooveProfiles::kByVoiceIndex[3]),
+              GroovePattern(0xb2a6d9c1u, *GrooveProfiles::kByVoiceIndex[4]),
+              GroovePattern(0x37e4f8b0u, *GrooveProfiles::kByVoiceIndex[5]),
+              GroovePattern(0xe1c5a3f7u, *GrooveProfiles::kByVoiceIndex[6]),
+              GroovePattern(0x4a9d2e6cu, *GrooveProfiles::kByVoiceIndex[7]),
+          } {
         for (std::size_t i = 0; i < voices_.size(); ++i) {
             const auto& initial = kInitialVoices[i];
             evolutionEngines_[i].resetTo(initial.volume, initial.tone, initial.motion,
@@ -314,6 +326,10 @@ public:
             case MidiTarget::MasterVolume:
                 masterVolume_.store(value, std::memory_order_relaxed);
                 break;
+            case MidiTarget::Wild:
+                wildDisplay_.store(value, std::memory_order_relaxed);
+                wildEvolver_.resync(value);
+                break;
         }
     }
 
@@ -352,12 +368,17 @@ public:
 
         for (int sample = 0; sample < numSamples; ++sample) {
             const bool onGridBoundary = playing && patternClock_.tick();
+            if (onGridBoundary) {
+                currentSlot16_ = (currentSlot16_ + 1) % static_cast<int>(GrooveProfiles::kSlotsPerBar);
+            }
 
             float mixedLeft = 0.0f;
             float mixedRight = 0.0f;
 
             const float space = spaceEvolver_.update(playing ? evolutionAmount : 0.0f, evolutionSpeed,
                                                      sampleRate_, spaceDisplay_);
+            const float wild = wildEvolver_.update(playing ? evolutionAmount : 0.0f, evolutionSpeed,
+                                                   sampleRate_, wildDisplay_);
 
             for (std::size_t i = 0; i < voices_.size(); ++i) {
                 auto& voice = voices_[i];
@@ -365,12 +386,31 @@ public:
                 evolutionEngines_[i].update(voice, playing ? evolutionAmount : 0.0f, evolutionSpeed);
 
                 if (playing && voice.isEnabled()) {
-                    const auto trigger = patternClouds_[i].update(
-                        onGridBoundary, voice.getDensity() * space, voice.getChaos(), voice.getMotion(),
-                        patternClock_.getSamplesPerSubdivision());
-                    if (trigger.has_value()) {
-                        const float pitchSemitones = (voice.getTone() - 0.5f) * 24.0f;
-                        const float velocity = trigger->velocity * voice.getVolume();
+                    // The per-voice Busy knob offsets this voice's own
+                    // effective Wild away from the room's global Wild
+                    // baseline — 0.5 (its default/center) means "follow
+                    // the room exactly."
+                    const float effectiveWild = juce::jlimit(
+                        0.0f, 1.0f, wild + (voice.getChaos() - 0.5f) * kWildSpread);
+                    std::optional<float> triggerVelocity;
+                    float triggerPitchSemitones = 0.0f;
+                    if (const auto trigger = groovePatterns_[i].update(
+                            onGridBoundary, currentSlot16_, voice.getDensity() * space, effectiveWild,
+                            voice.getMotion(), evolutionAmount,
+                            patternClock_.getSamplesPerSubdivision())) {
+                        triggerVelocity = trigger->velocity;
+                        triggerPitchSemitones = trigger->pitchSemitones;
+                    }
+                    if (triggerVelocity.has_value()) {
+                        // Tone sets the voice's base pitch; Motion's
+                        // per-hit jitter (triggerPitchSemitones, from
+                        // whichever engine just fired) rides on top of
+                        // it — previously computed by both engines but
+                        // never actually applied here, so Motion only
+                        // ever affected velocity, not pitch.
+                        const float pitchSemitones =
+                            (voice.getTone() - 0.5f) * 24.0f + triggerPitchSemitones;
+                        const float velocity = *triggerVelocity * voice.getVolume();
                         samplePools_[i].trigger(&sampleBuffers_[i], pitchSemitones, velocity);
 
                         // Mirrors the trigger as a GM note in the output
@@ -466,6 +506,7 @@ public:
         scene.delayBeatFraction = delayBeatFraction_.load(std::memory_order_relaxed);
         scene.delayFeedback = delayFeedback_.load(std::memory_order_relaxed);
         scene.masterVolume = masterVolume_.load(std::memory_order_relaxed);
+        scene.wild = wildDisplay_.load(std::memory_order_relaxed);
         return scene;
     }
 
@@ -517,6 +558,8 @@ public:
         delayBeatFraction_.store(scene.delayBeatFraction, std::memory_order_relaxed);
         delayFeedback_.store(scene.delayFeedback, std::memory_order_relaxed);
         masterVolume_.store(scene.masterVolume, std::memory_order_relaxed);
+        wildDisplay_.store(scene.wild, std::memory_order_relaxed);
+        wildEvolver_.resync(scene.wild);
     }
 
     void handlePlayPressed() { isPlaying_.store(true, std::memory_order_relaxed); }
@@ -541,6 +584,10 @@ public:
         // every voice's own density defaults already assume.
         spaceDisplay_.store(1.0f, std::memory_order_relaxed);
         spaceEvolver_.resync(1.0f);
+        // Same "back to defaults" contract for Wild — reset to the
+        // ACDC-rigid end.
+        wildDisplay_.store(0.0f, std::memory_order_relaxed);
+        wildEvolver_.resync(0.0f);
     }
 
     void handleRandomizePressed() {
@@ -733,6 +780,12 @@ public:
         spaceEvolver_.resync(value);
     }
 
+    std::atomic<float>& wildDisplay() { return wildDisplay_; }
+    void setWild(float value) {
+        wildDisplay_.store(value, std::memory_order_relaxed);
+        wildEvolver_.resync(value);
+    }
+
     MidiBindingManager midiBindings_;
     MidiPresetStore midiPresetStore_{
         juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -752,7 +805,7 @@ public:
 private:
     std::array<VoiceModel, 8> voices_;
     std::array<DrumEvolutionEngine, 8> evolutionEngines_;
-    std::array<PatternCloud, 8> patternClouds_;
+    std::array<GroovePattern, 8> groovePatterns_;
     std::array<SampleVoicePool, 8> samplePools_;
     std::array<SampleBuffer, 8> sampleBuffers_;
     std::array<SampleBuffer, 8> defaultKit_;
@@ -777,13 +830,29 @@ private:
     std::atomic<float> evolutionAmount_{0.0f};
     std::atomic<float> evolutionSpeed_{0.5f};
     std::atomic<float> spaceDisplay_{1.0f};
-    SpaceEvolver spaceEvolver_{0x1e7ad03u};
+    // floor=0.3/biasExponent=0.4: autonomous drift can thin the kit down
+    // to 30% busy-ness but never past it, and mostly sits well above the
+    // floor (biasExponent<1 skews the draw toward 1.0) — so Space reads
+    // as "breathing into something sparse," not "silence for a while."
+    // Wild's own SpaceEvolver instance below is untouched (its defaults
+    // reproduce the original unshaped uniform-draw behavior exactly),
+    // since Wild=0 (ACDC-rigid) is an intentional, valid destination for
+    // it to land on, unlike Space's near-silence case.
+    SpaceEvolver spaceEvolver_{0x1e7ad03u, 1.0f, 0.3f, 0.4f};
     std::atomic<float> reverbRoom_{0.0f};
     std::atomic<float> reverbDecay_{0.0f};
     std::atomic<float> delayFeedback_{0.0f};
     std::atomic<float> delayBeatFraction_{0.5f};
     std::atomic<float> masterVolume_{1.0f};
     std::atomic<int> focusedVoiceIndex_{0};
+    std::atomic<float> wildDisplay_{0.0f};
+    SpaceEvolver wildEvolver_{0x7c2f91du};
+    // Shared 0-15 bar-position counter for GroovePattern — advanced once
+    // per PatternClock grid tick, independent of PatternClock itself
+    // (which stays untouched, only used for its sample-accurate 16th-
+    // note timing). Starts at -1 so the first tick's increment lands on
+    // slot 0, not 1.
+    int currentSlot16_ = -1;
     double sampleRate_ = 44100.0;
 
     juce::TimeSliceThread recordingThread_{"Marmite Recording Thread"};

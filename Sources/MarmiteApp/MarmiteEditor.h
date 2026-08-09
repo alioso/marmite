@@ -45,11 +45,13 @@ public:
         const juce::String bodyText =
             "Marmite\n"
             "A generative drum machine by Alban Bailly.\n\n"
-            "Each of the 8 voices is a PatternCloud: instead of a fixed step "
-            "grid, it decides probabilistically whether/when/how to fire "
-            "against a shared tempo clock, drawing fresh timing/velocity/"
-            "pitch jitter from the ranges you set - so the pattern never "
-            "loops identically twice.\n\n"
+            "Each of the 8 voices has its own beat-aware accent profile "
+            "(Kick favors beats 1/3, Snare favors 2/4, etc.) shaping a "
+            "bar-persistent pattern that holds steady rather than "
+            "repeating a fixed step grid, mutating gradually over time "
+            "(tied to Evolution Amount) rather than looping identically. "
+            "The global Wild knob sets how strongly that structure is "
+            "honored, from a locked-in basic groove to glitchy chaos.\n\n"
             "TRANSPORT\n"
             "Play - starts new hits triggering. Stop - halts new triggers "
             "(already-sounding hits ring out on their own). Reset - snaps "
@@ -70,11 +72,10 @@ public:
             "each voice, so some voices stay consistently sparse and "
             "others consistently busy rather than every voice averaging "
             "toward the same medium busy-ness over time.\n"
-            "Chaos - the rhythmic sibling of dissonance: 0 locks hits "
-            "exactly to the beat grid (a basic rock 4/4 feel), 1 pushes "
-            "them off-grid with wide, unpredictable timing (IDM/glitch "
-            "territory) - the one macro that lets this instrument span "
-            "that whole range.\n"
+            "Busy - this voice's offset from the room's Wild setting (see "
+            "below) - 0.5 (its default) means \"follow the room exactly,\" "
+            "lower/higher pulls just this voice calmer/wilder than the "
+            "rest of the kit.\n"
             "Load Sample... - replaces this voice's procedurally-"
             "synthesized default hit with your own WAV/AIFF/FLAC/MP3/OGG.\n\n"
             "Each control has its own small Evolution switch (on by "
@@ -89,6 +90,16 @@ public:
             "periodically breathes into genuinely sparse, quiet passages "
             "and back - not just one voice going quiet while the rest "
             "carry on.\n"
+            "Wild - the room's baseline groove complexity: 0 (ACDC-rigid) "
+            "through 50 (Jungle/breakbeat) to 100 (Squarepusher-glitchy). "
+            "Each voice has its own accent profile (Kick favors beats "
+            "1/3, Snare favors 2/4, etc.); Wild continuously reshapes how "
+            "strongly that profile is honored and how often the pattern "
+            "mutates (tied to Evolution Amount), rather than switching "
+            "between fixed presets. The pattern itself holds steady "
+            "across bars rather than re-rolling every hit - a per-voice "
+            "Busy knob (see above) offsets that voice above or below "
+            "this room-wide setting.\n"
             "Reverb - Room/Decay, a global send for the whole mix. Both "
             "are 0 by default (no reverb, output unchanged) and never "
             "evolve on their own.\n"
@@ -111,13 +122,14 @@ public:
             "pattern instead of - or alongside - Marmite's own kit. "
             "Scenes saves/loads a full snapshot of every knob and toggle "
             "(transport state isn't included).\n\n"
-            "RECORDING\n"
+            "RECORDING (Standalone only)\n"
             "Record captures the exact final mix (everything, post-"
             "Reverb) to a timestamped WAV under ~/Music/Marmite "
             "Recordings - click again to stop and finalize the file. "
             "Independent of the transport: you can record silence as "
             "easily as a running pattern. \"Open Folder\" reveals the "
-            "most recent recording in Finder.\n\n" +
+            "most recent recording in Finder. As an AU/VST3 plugin, use "
+            "your host's own recording/bounce workflow instead.\n\n" +
             juce::String(juce::CharPointer_UTF8("\xc2\xa9")) +
             " 2026 Alban Bailly. All rights reserved.";
 
@@ -168,7 +180,7 @@ public:
             motionSlider_.setValue(voiceRef_.getMotion());
             setUpKnob(densitySlider_, densityLabel_, "Density");
             densitySlider_.setValue(voiceRef_.getDensity());
-            setUpKnob(chaosSlider_, chaosLabel_, "Chaos");
+            setUpKnob(chaosSlider_, chaosLabel_, "Busy");
             chaosSlider_.setValue(voiceRef_.getChaos());
 
             addAndMakeVisible(evolutionSectionLabel_);
@@ -386,7 +398,7 @@ public:
     private:
         static constexpr std::size_t kEvolutionToggleCount = 5;
         static constexpr const char* kEvolutionCaptions[kEvolutionToggleCount] = {
-            "Volume", "Tone", "Motion", "Density", "Chaos"};
+            "Volume", "Tone", "Motion", "Density", "Busy"};
 
         void setUpLabel(juce::Label& label, const char* labelText) {
             addAndMakeVisible(label);
@@ -858,7 +870,7 @@ public:
             y = layoutSection(perVoiceSectionLabel_, 0, 11, padding, innerContentWidth, y);
             y = layoutSection(voiceSelectSectionLabel_, 11, 19, padding, innerContentWidth, y);
             y = layoutSection(transportSectionLabel_, 19, 23, padding, innerContentWidth, y);
-            y = layoutSection(globalSectionLabel_, 23, 32, padding, innerContentWidth, y);
+            y = layoutSection(globalSectionLabel_, 23, 33, padding, innerContentWidth, y);
             rowsContainer_.setSize(rowsContentWidth, y + padding);
         }
 
@@ -917,13 +929,13 @@ public:
                 case MidiTarget::VoiceTone: return "Tone";
                 case MidiTarget::VoiceMotion: return "Motion";
                 case MidiTarget::VoiceDensity: return "Density";
-                case MidiTarget::VoiceChaos: return "Chaos";
+                case MidiTarget::VoiceChaos: return "Busy";
                 case MidiTarget::VoiceEnabledToggle: return "Enabled toggle";
                 case MidiTarget::VoiceVolumeEvoToggle: return "Evolve: Volume";
                 case MidiTarget::VoiceToneEvoToggle: return "Evolve: Tone";
                 case MidiTarget::VoiceMotionEvoToggle: return "Evolve: Motion";
                 case MidiTarget::VoiceDensityEvoToggle: return "Evolve: Density";
-                case MidiTarget::VoiceChaosEvoToggle: return "Evolve: Chaos";
+                case MidiTarget::VoiceChaosEvoToggle: return "Evolve: Busy";
                 case MidiTarget::SelectVoice1: return "Voice 1";
                 case MidiTarget::SelectVoice2: return "Voice 2";
                 case MidiTarget::SelectVoice3: return "Voice 3";
@@ -945,6 +957,7 @@ public:
                 case MidiTarget::DelayTime: return "Delay Time";
                 case MidiTarget::DelayFeedback: return "Delay Feedback";
                 case MidiTarget::MasterVolume: return "Master Volume";
+                case MidiTarget::Wild: return "Wild";
             }
             return "";
         }
@@ -1018,6 +1031,11 @@ public:
         recordButton.setButtonText("Record");
         recordButton.setClickingTogglesState(false);
         recordButton.onClick = [this] { toggleRecording(); };
+        // A DAW hosting this as a plugin already has its own record/
+        // bounce workflow — a plugin silently writing its own WAV to
+        // ~/Music independent of the host is redundant there. Standalone
+        // has no such host, so it's the only place this earns its keep.
+        recordButton.setVisible(processor_.wrapperType == juce::AudioProcessor::wrapperType_Standalone);
 
         addAndMakeVisible(scenesButton);
         scenesButton.setButtonText("Scenes");
@@ -1066,6 +1084,13 @@ public:
         setUpKnob(spaceSlider, spaceLabel, "Space");
         spaceSlider.setRange(0.0, 1.0);
         spaceSlider.setValue(processor_.spaceDisplay().load(std::memory_order_relaxed));
+
+        // The room's baseline on the ACDC/Jungle/Squarepusher groove-
+        // complexity curve — see GroovePattern.h. Each voice's Busy knob
+        // offsets around this.
+        setUpKnob(wildSlider, wildLabel, "Wild");
+        wildSlider.setRange(0.0, 1.0);
+        wildSlider.setValue(processor_.wildDisplay().load(std::memory_order_relaxed));
 
         addAndMakeVisible(reverbTitleLabel);
         reverbTitleLabel.setText("Reverb", juce::dontSendNotification);
@@ -1138,14 +1163,14 @@ public:
             voiceRows_[i]->refreshSampleLabel(processor_.getSampleFile(i), processor_.isSampleMissing(i));
         }
 
-        setSize(1400, 820);
+        setSize(1460, 820);
         // Fixed-position bottom knob row assumes at least this much room
         // (it runs out to a fixed x, not width-relative — see
         // volumeBlockX in resized()), so shrinking below the design size
         // would clip content. Growing is fine, everything else is
         // already width/height-relative.
         setResizable(true, true);
-        setResizeLimits(1400, 820, 2400, 1400);
+        setResizeLimits(1460, 820, 2400, 1400);
         startTimerHz(30);
     }
 
@@ -1158,9 +1183,11 @@ public:
         titleLabel.setBounds(82, 16, 300, 34);
         subtitleLabel.setBounds(82, 48, getWidth() - 340, 22);
 
-        // Header cluster: Help (rightmost), Bindings, Scenes, Record — no
-        // Output/MIDI In/Out pickers here, those are the host's/
-        // Standalone's job now.
+        // Header cluster: Help (rightmost), Bindings, Scenes, Record,
+        // Audio/MIDI (leftmost) — no Output/MIDI In/Out pickers here,
+        // those are the host's/Standalone's job now. Set/Free lives down
+        // by the transport row instead (see below) — a physical-style
+        // switch, not a header button.
         helpButton.setBounds(getWidth() - 64, 32, 24, 24);
         bindingsButton.setBounds(getWidth() - 152, 32, 80, 24);
         scenesButton.setBounds(getWidth() - 232, 32, 70, 24);
@@ -1210,7 +1237,7 @@ public:
                               knobSize + knobTextBoxHeight);
 
         const int evolutionBlockX = tempoBlockX + knobColumnWidth + 30;
-        const int evolutionBlockWidth = knobColumnWidth * 3;
+        const int evolutionBlockWidth = knobColumnWidth * 4;
         const int evolutionTitleTop = knobLabelTop - titleGap - titleHeight;
         evolutionTitleLabel.setBounds(evolutionBlockX, evolutionTitleTop, evolutionBlockWidth,
                                       titleHeight);
@@ -1218,6 +1245,7 @@ public:
         const int amountColumnX = evolutionBlockX;
         const int speedColumnX = evolutionBlockX + knobColumnWidth;
         const int spaceColumnX = evolutionBlockX + knobColumnWidth * 2;
+        const int wildColumnX = evolutionBlockX + knobColumnWidth * 3;
         evolutionAmountLabel.setBounds(amountColumnX, knobLabelTop, knobColumnWidth, knobLabelHeight);
         evolutionAmountSlider.setBounds(amountColumnX + (knobColumnWidth - knobSize) / 2, knobBoxTop,
                                         knobSize, knobSize + knobTextBoxHeight);
@@ -1225,6 +1253,9 @@ public:
         evolutionSpeedSlider.setBounds(speedColumnX + (knobColumnWidth - knobSize) / 2, knobBoxTop,
                                        knobSize, knobSize + knobTextBoxHeight);
         spaceLabel.setBounds(spaceColumnX, knobLabelTop, knobColumnWidth, knobLabelHeight);
+        wildLabel.setBounds(wildColumnX, knobLabelTop, knobColumnWidth, knobLabelHeight);
+        wildSlider.setBounds(wildColumnX + (knobColumnWidth - knobSize) / 2, knobBoxTop, knobSize,
+                             knobSize + knobTextBoxHeight);
         spaceSlider.setBounds(spaceColumnX + (knobColumnWidth - knobSize) / 2, knobBoxTop, knobSize,
                               knobSize + knobTextBoxHeight);
 
@@ -1352,6 +1383,7 @@ public:
         refreshGlobalKnobFromAtomic(evolutionAmountSlider, processor_.evolutionAmount());
         refreshGlobalKnobFromAtomic(evolutionSpeedSlider, processor_.evolutionSpeed());
         refreshGlobalKnobFromAtomic(spaceSlider, processor_.spaceDisplay());
+        refreshGlobalKnobFromAtomic(wildSlider, processor_.wildDisplay());
         refreshGlobalKnobFromAtomic(roomSlider, processor_.reverbRoom());
         refreshGlobalKnobFromAtomic(decaySlider, processor_.reverbDecay());
         refreshGlobalKnobFromAtomic(delayFeedbackSlider, processor_.delayFeedback());
@@ -1453,6 +1485,8 @@ public:
                                               std::memory_order_relaxed);
         } else if (slider == &spaceSlider) {
             processor_.setSpace(static_cast<float>(spaceSlider.getValue()));
+        } else if (slider == &wildSlider) {
+            processor_.setWild(static_cast<float>(wildSlider.getValue()));
         } else if (slider == &roomSlider) {
             processor_.reverbRoom().store(static_cast<float>(roomSlider.getValue()),
                                           std::memory_order_relaxed);
@@ -1487,6 +1521,7 @@ public:
         refreshGlobalKnobFromAtomic(evolutionAmountSlider, processor_.evolutionAmount());
         refreshGlobalKnobFromAtomic(evolutionSpeedSlider, processor_.evolutionSpeed());
         refreshGlobalKnobFromAtomic(spaceSlider, processor_.spaceDisplay());
+        refreshGlobalKnobFromAtomic(wildSlider, processor_.wildDisplay());
         refreshGlobalKnobFromAtomic(roomSlider, processor_.reverbRoom());
         refreshGlobalKnobFromAtomic(decaySlider, processor_.reverbDecay());
         refreshGlobalKnobFromAtomic(delayFeedbackSlider, processor_.delayFeedback());
@@ -1527,6 +1562,8 @@ private:
     juce::Slider evolutionSpeedSlider;
     juce::Label spaceLabel;
     juce::Slider spaceSlider;
+    juce::Label wildLabel;
+    juce::Slider wildSlider;
     juce::Label reverbTitleLabel;
     juce::Label roomLabel;
     juce::Slider roomSlider;

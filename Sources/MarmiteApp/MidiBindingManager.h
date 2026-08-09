@@ -8,7 +8,7 @@
 #include <string>
 
 // Pure C++, JUCE-free — same convention as DrumVoiceModel/
-// DrumEvolutionEngine/PatternCloud, which keeps this testable as a bare
+// DrumEvolutionEngine/GroovePattern, which keeps this testable as a bare
 // add_executable target with no JUCE linkage (see Tests/*Test.cpp).
 // Main.cpp is the only place that knows about juce::MidiMessage; it
 // translates each one into a MidiEvent before calling in here. Ported
@@ -49,7 +49,7 @@ enum class MidiTarget {
     TransportStop,
     TransportReset,
     TransportRandomize,
-    // Global (9).
+    // Global (10).
     Tempo,
     EvolutionAmount,
     EvolutionSpeed,
@@ -59,9 +59,10 @@ enum class MidiTarget {
     DelayTime,
     DelayFeedback,
     MasterVolume,
+    Wild,
 };
 
-inline constexpr std::array<MidiTarget, 32> kAllMidiTargets{
+inline constexpr std::array<MidiTarget, 33> kAllMidiTargets{
     MidiTarget::VoiceVolume,
     MidiTarget::VoiceTone,
     MidiTarget::VoiceMotion,
@@ -94,6 +95,7 @@ inline constexpr std::array<MidiTarget, 32> kAllMidiTargets{
     MidiTarget::DelayTime,
     MidiTarget::DelayFeedback,
     MidiTarget::MasterVolume,
+    MidiTarget::Wild,
 };
 
 // Single source of truth for target <-> name, used by the bindings popup
@@ -132,6 +134,7 @@ inline const char* midiTargetName(MidiTarget target) {
         case MidiTarget::DelayTime: return "DelayTime";
         case MidiTarget::DelayFeedback: return "DelayFeedback";
         case MidiTarget::MasterVolume: return "MasterVolume";
+        case MidiTarget::Wild: return "Wild";
     }
     return "";
 }

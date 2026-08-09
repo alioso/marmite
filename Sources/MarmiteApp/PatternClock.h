@@ -3,7 +3,7 @@
 #include <algorithm>
 
 // A single shared, sample-accurate tempo clock, driving every voice's
-// PatternCloud off the same grid. Ticked once per sample from the audio
+// GroovePattern off the same grid. Ticked once per sample from the audio
 // callback (same per-sample call convention Jerrican's GrainCloud uses)
 // rather than batched per-block, so there's no need to track multiple
 // boundary crossings within one call — simpler, and avoids any
