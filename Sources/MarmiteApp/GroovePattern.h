@@ -9,8 +9,9 @@
 #include "GrooveProfiles.h"
 
 // One per drum voice — the engine behind every voice's pattern (see
-// MarmiteProcessor.h). Holds a persistent 16-slot mask — one bar's worth
-// of on/off state per voice — that's mostly held steady and only mutates
+// MarmiteProcessor.h). Holds a persistent mask — one bar's worth of
+// on/off state per voice, sized to the current meter's bar length (see
+// setAccentProfile) — that's mostly held steady and only mutates
 // slot-by-slot on bar boundaries, rather than rolling a fresh independent
 // decision on every 16th-note subdivision with no idea which subdivision
 // it is. Two things can trigger a slot to re-roll: a genuine manual edit
@@ -52,9 +53,10 @@ public:
     void forceRegenerateNextBoundary() { initialized_ = false; }
 
     // Called once per sample, in lockstep with the shared PatternClock's
-    // tick() (via onGridBoundary). currentSlot is a shared 0-15
-    // bar-position counter owned by the caller (MarmiteAudioProcessor),
-    // incremented on every grid tick. effectiveWild is this voice's own
+    // tick() (via onGridBoundary). currentSlot is a shared bar-position
+    // counter (0..activeSlotCount_-1) owned by the caller
+    // (MarmiteAudioProcessor), incremented on every grid tick.
+    // effectiveWild is this voice's own
     // position on the ACDC/Squarepusher curve (the global Wild knob plus
     // this voice's Busy-offset).
     std::optional<Trigger> update(bool onGridBoundary, int currentSlot, float density,

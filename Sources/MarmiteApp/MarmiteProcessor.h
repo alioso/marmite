@@ -371,6 +371,9 @@ public:
         if (pendingMeter >= 0) {
             applyMeterChange(pendingMeter);
         }
+        if (pendingPhaseReset_.exchange(false, std::memory_order_relaxed)) {
+            resetPatternPhase();
+        }
 
         processHostSync();
 
@@ -832,6 +835,15 @@ public:
                                  std::memory_order_relaxed);
     }
 
+    // Re-snaps the pattern back to beat 1 without touching any knob or
+    // Scene state — a lightweight "resync the clock" independent of
+    // Reset (which also reverts every voice to its defaults). Clicked
+    // from the beat counter itself (see BeatPulseIndicator::onClick).
+    // Same queued-request pattern as requestMeter, for the same reason:
+    // touches non-atomic per-voice pattern state, so it can't be applied
+    // directly from the UI thread.
+    void requestPhaseReset() { pendingPhaseReset_.store(true, std::memory_order_relaxed); }
+
     int meterNumeratorDisplay() const { return meterNumeratorDisplay_.load(std::memory_order_relaxed); }
     int meterDenominatorDisplay() const { return meterDenominatorDisplay_.load(std::memory_order_relaxed); }
     int currentSlot16Display() const { return currentSlot16Display_.load(std::memory_order_relaxed); }
@@ -856,6 +868,18 @@ public:
     juce::String currentSceneName_;
 
 private:
+    // Snaps back to beat 1 (slot 0) without touching the meter or any
+    // voice/knob state — just re-phases the existing pattern, same as
+    // the phase-snap half of applyMeterChange but with no profile
+    // regeneration since the meter itself hasn't changed.
+    void resetPatternPhase() {
+        currentSlot16_ = -1;
+        currentSlot16Display_.store(-1, std::memory_order_relaxed);
+        for (auto& pattern : groovePatterns_) {
+            pattern.forceRegenerateNextBoundary();
+        }
+    }
+
     // Regenerates every voice's accent profile for the new meter,
     // reseats each GroovePattern onto it, and forces a fresh mask (the
     // old one was sized/shaped for the previous meter). Only ever called
@@ -868,9 +892,9 @@ private:
             groovePatterns_[i].setAccentProfile(&currentMeterProfiles_[i], meter.totalSlots);
             groovePatterns_[i].forceRegenerateNextBoundary();
         }
-        currentMeterIndex_ = meterIndex;
         currentMeterSlotCount_ = meter.totalSlots;
         currentSlot16_ = -1;
+        currentSlot16Display_.store(-1, std::memory_order_relaxed);
         meterNumeratorDisplay_.store(meter.numerator, std::memory_order_relaxed);
         meterDenominatorDisplay_.store(meter.denominator, std::memory_order_relaxed);
     }
@@ -946,7 +970,6 @@ private:
     // groovePatterns_ below, since both depend on it — C++ initializes
     // members in declaration order regardless of the initializer list's
     // order.
-    int currentMeterIndex_ = GrooveProfiles::kDefaultMeterIndex;
     int currentMeterSlotCount_ = GrooveProfiles::kMeters[GrooveProfiles::kDefaultMeterIndex].totalSlots;
     std::array<GrooveProfiles::AccentProfile, 8> currentMeterProfiles_;
     std::array<GroovePattern, 8> groovePatterns_;
@@ -1013,10 +1036,14 @@ private:
     // thread is queued here and consumed once per block on the audio
     // thread (applyMeterChange), rather than racing a torn write.
     std::atomic<int> pendingMeterIndex_{-1};
+    // Same queued-request reasoning as pendingMeterIndex_ above, for
+    // requestPhaseReset().
+    std::atomic<bool> pendingPhaseReset_{false};
 
-    // Host transport sync (see requestHostSync()/processBlock). Plain,
-    // audio-thread-only — both are only ever read/written from
-    // processBlock, unlike the cross-thread atomics above.
+    // Host transport sync (see setHostSyncEnabled()/processHostSync()).
+    // hostSyncEnabled_ is cross-thread (set from the UI thread); the rest
+    // are plain, audio-thread-only — only ever read/written from
+    // processBlock.
     std::atomic<bool> hostSyncEnabled_{false};
     bool lastHostPlaying_ = false;
     bool hasLastHostPpq_ = false;

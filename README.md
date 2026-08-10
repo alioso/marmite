@@ -33,7 +33,7 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
   own position on the same curve away from the room (0.5 = follow the
   room exactly; below/above pulls that one voice calmer/wilder than the
   rest of the kit).
-- **Autonomous drift**: every macro (Volume/Tone/Motion/Density/Chaos) can
+- **Autonomous drift**: every macro (Volume/Tone/Motion/Density/Busy) can
   independently opt in/out of Evolution — occasionally picking a new
   random target and gliding toward it, same mechanic Jerrican uses for its
   own voices. Density's autonomous drift is further bounded to a range
@@ -57,8 +57,11 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
 - **Meter**: 4/4, 3/4, 5/4, 6/8, 7/8, 9/8, or 12/8 — every voice's accent
   profile is regenerated from the new meter's natural pulse grouping (e.g.
   7/8 as 2+2+3), so Density/Wild/Evolution/Motion all keep working exactly
-  as before regardless of time signature. A beat-pulse light strip under
-  the header shows one light per pulse, first pulse accented.
+  as before regardless of time signature. A beat counter next to the Meter
+  select counts up through every beat of the bar (6/8 counts 1-6, 12/8
+  counts 1-12), the downbeat shown in the accent color; clicking it
+  re-snaps the pattern back to beat 1 without touching any knob or Scene
+  state.
 - **Host Sync** (AU/VST3 only): an opt-in toggle that makes Play/Stop
   follow the host DAW's transport (so a count-in before recording starts
   Marmite on the downbeat too), locks Tempo continuously to the host's
@@ -100,7 +103,9 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
   the realtime audio callback never blocks on file I/O; "Open Folder"
   reveals the last recording in Finder
 - An 8-voice card UI (`DrumVoiceRow`) plus a transport row (Play / Stop /
-  Reset / Randomize) and an in-app Help popup
+  Reset / Randomize), a Meter select with its beat counter
+  (`BeatPulseIndicator`), a Host Sync toggle (AU/VST3 only), and an
+  in-app Help popup
 - Headless regression tests for every JUCE-free engine class (10 test
   binaries — the engine has zero JUCE dependency, so these link and run
   with no app bundle/audio device needed)
@@ -113,7 +118,7 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
 - [Sources/MarmiteApp/DrumVoiceModel.h](Sources/MarmiteApp/DrumVoiceModel.h) — per-voice macro state (Volume/Tone/Motion/Density/Chaos)
 - [Sources/MarmiteApp/PatternClock.h](Sources/MarmiteApp/PatternClock.h) — shared sample-accurate tempo grid
 - [Sources/MarmiteApp/GroovePattern.h](Sources/MarmiteApp/GroovePattern.h) / [GrooveProfiles.h](Sources/MarmiteApp/GrooveProfiles.h) — beat-weighted, bar-persistent pattern engine; GrooveProfiles also holds the 7 supported time signatures' pulse groupings and generates each voice's accent profile from them
-- [Sources/MarmiteApp/BeatPulseIndicator.h](Sources/MarmiteApp/BeatPulseIndicator.h) — the header's beat-pulse light strip, one light per pulse group of the current meter
+- [Sources/MarmiteApp/BeatPulseIndicator.h](Sources/MarmiteApp/BeatPulseIndicator.h) — the clickable beat counter next to the Meter select
 - [Sources/MarmiteApp/SamplePlayer.h](Sources/MarmiteApp/SamplePlayer.h) / [SampleVoicePool.h](Sources/MarmiteApp/SampleVoicePool.h) — polyphonic sample playback
 - [Sources/MarmiteApp/ProceduralKit.h](Sources/MarmiteApp/ProceduralKit.h) — the synthesized default 8-voice kit
 - [Sources/MarmiteApp/DrumEvolutionEngine.h](Sources/MarmiteApp/DrumEvolutionEngine.h) — per-voice autonomous macro drift

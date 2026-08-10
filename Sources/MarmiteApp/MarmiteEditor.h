@@ -93,8 +93,10 @@ public:
             "accent profile - and Density/Wild/Evolution/Motion's effect "
             "on it - is regenerated for the new meter's natural pulse "
             "grouping (e.g. 7/8 as 2+2+3), rather than switching to a "
-            "hand-tuned alternate pattern. The beat-pulse strip under the "
-            "subtitle shows one light per pulse, first pulse accented.\n"
+            "hand-tuned alternate pattern. The counter next to Meter "
+            "counts up through every beat of the bar (green on the "
+            "downbeat) - click it to re-snap the pattern back to beat 1 "
+            "without touching any knob or Scene state.\n"
             "Space - how \"busy\" the whole kit is right now. Autonomously "
             "drifts alongside Evolution Amount/Speed, scaling every "
             "voice's effective Density together, so the ensemble "
@@ -1105,10 +1107,11 @@ public:
         meterTitleLabel.setColour(juce::Label::textColourId, MarmiteTheme::textPrimary);
         meterTitleLabel.setJustificationType(juce::Justification::centred);
 
-        // The clock face's needle position doubles as the beat-pulse
-        // indicator — same knob-sized footprint as any other control in
-        // this row, right next to the Meter select.
+        // The beat counter box doubles as a click target: resyncs the
+        // pattern back to beat 1 without touching any knob or Scene
+        // state — a quick "resync the clock" independent of Reset.
         addAndMakeVisible(beatPulseIndicator_);
+        beatPulseIndicator_.onClick = [this] { processor_.requestPhaseReset(); };
 
         addAndMakeVisible(meterLabel);
         meterLabel.setText("Meter", juce::dontSendNotification);
@@ -1251,9 +1254,9 @@ public:
 
         // Header cluster: Help (rightmost), Bindings, Scenes, Record,
         // Audio/MIDI (leftmost) — no Output/MIDI In/Out pickers here,
-        // those are the host's/Standalone's job now. Set/Free lives down
-        // by the transport row instead (see below) — a physical-style
-        // switch, not a header button.
+        // those are the host's/Standalone's job now. Host Sync shares
+        // Audio/MIDI's slot (Standalone-only vs. hosted-only, so the two
+        // never show at once).
         helpButton.setBounds(getWidth() - 64, 32, 24, 24);
         bindingsButton.setBounds(getWidth() - 152, 32, 80, 24);
         scenesButton.setBounds(getWidth() - 232, 32, 70, 24);

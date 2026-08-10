@@ -11,9 +11,14 @@
 // displays in the accent color, every other beat in plain text color —
 // no geometry, just a number that counts up and resets. Polled from the
 // editor's existing 30Hz timerCallback via refresh() rather than owning
-// its own juce::Timer.
+// its own juce::Timer. Clicking it fires onClick — the editor wires this
+// to re-snap the pattern's phase back to beat 1, a lightweight "resync
+// the clock" action that's independent of Reset (which reverts every
+// knob to its defaults) or Scene recall.
 class BeatPulseIndicator : public juce::Component {
 public:
+    std::function<void()> onClick;
+
     void refresh(int numerator, int denominator, int currentSlot16) {
         const int meterIndex = GrooveProfiles::findMeterIndex(numerator, denominator);
         const int beat = beatForSlot(meterIndex, currentSlot16);
@@ -37,6 +42,16 @@ public:
         g.setColour(activeBeat_ == 0 ? MarmiteTheme::accent : MarmiteTheme::textPrimary);
         g.setFont(juce::Font(juce::FontOptions(24.0f)).withStyle(juce::Font::bold));
         g.drawText(juce::String(activeBeat_ + 1), bounds, juce::Justification::centred);
+    }
+
+    void mouseUp(const juce::MouseEvent&) override {
+        if (onClick) {
+            onClick();
+        }
+    }
+
+    void mouseEnter(const juce::MouseEvent&) override {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
     }
 
 private:
