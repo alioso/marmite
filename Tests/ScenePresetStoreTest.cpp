@@ -51,6 +51,8 @@ SceneState makeTestScene() {
     scene.delayFeedback = 0.5f;
     scene.masterVolume = 0.88f;
     scene.wild = 0.62f;
+    scene.meterNumerator = 7;
+    scene.meterDenominator = 8;
     return scene;
 }
 
@@ -81,6 +83,8 @@ void assertScenesEqual(const SceneState& a, const SceneState& b) {
     assert(std::abs(a.delayFeedback - b.delayFeedback) < 1e-4f);
     assert(std::abs(a.masterVolume - b.masterVolume) < 1e-4f);
     assert(std::abs(a.wild - b.wild) < 1e-4f);
+    assert(a.meterNumerator == b.meterNumerator);
+    assert(a.meterDenominator == b.meterDenominator);
 }
 
 }  // namespace
@@ -201,6 +205,11 @@ int main() {
         b.wild += 0.2f;
         assert(!(a == b));
         b.wild = a.wild;
+        assert(a == b);
+
+        b.meterNumerator = 5;
+        assert(!(a == b));
+        b.meterNumerator = a.meterNumerator;
         assert(a == b);
 
         // Tiny float differences (well within round-trip tolerance) still

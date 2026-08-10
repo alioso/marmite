@@ -1,5 +1,6 @@
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <iostream>
 
 #include "GroovePattern.h"
@@ -11,7 +12,11 @@ namespace {
 // to half a subdivision at effectiveWild=1) resolves within a handful of
 // flush calls, rather than needing to simulate real per-sample audio.
 constexpr double kSamplesPerSubdivision = 100.0;
-constexpr int kSlots = static_cast<int>(GrooveProfiles::kSlotsPerBar);
+// Most tests below exercise a plain 16-slot (4/4-equivalent) bar; the
+// profile array itself is always GrooveProfiles::kMaxSlotsPerBar-sized
+// now (the largest supported meter, 12/8), with only the first kSlots
+// entries meaningful here.
+constexpr int kSlots = 16;
 
 // Ticks one grid boundary at `slot`, then flushes enough non-boundary
 // calls to resolve any pending delayed trigger (see GroovePattern's
@@ -33,10 +38,10 @@ bool tickSlotAndCheckFired(GroovePattern& pattern, int slot, float density, floa
     return false;
 }
 
-// Runs one full 16-slot bar, returning which slots fired.
-std::array<bool, GrooveProfiles::kSlotsPerBar> runBar(GroovePattern& pattern, float density, float wild,
-                                                      float motion, float evolutionAmount) {
-    std::array<bool, GrooveProfiles::kSlotsPerBar> fired{};
+// Runs one full kSlots-slot bar, returning which slots fired.
+std::array<bool, kSlots> runBar(GroovePattern& pattern, float density, float wild, float motion,
+                                float evolutionAmount) {
+    std::array<bool, kSlots> fired{};
     for (int slot = 0; slot < kSlots; ++slot) {
         fired[static_cast<std::size_t>(slot)] =
             tickSlotAndCheckFired(pattern, slot, density, wild, motion, evolutionAmount);
@@ -55,7 +60,7 @@ int main() {
         GrooveProfiles::AccentProfile profile{};
         profile.fill(0.0f);
         profile[3] = 1.0f;  // one active slot so the pattern isn't silent
-        GroovePattern pattern(0x1234u, profile);
+        GroovePattern pattern(0x1234u, &profile, kSlots);
 
         bool everFiredAtZeroSlot = false;
         for (int bar = 0; bar < 20; ++bar) {
@@ -75,7 +80,7 @@ int main() {
     {
         GrooveProfiles::AccentProfile profile{};
         profile.fill(1.0f);
-        GroovePattern pattern(0x5678u, profile);
+        GroovePattern pattern(0x5678u, &profile, kSlots);
 
         for (int bar = 0; bar < 20; ++bar) {
             const auto fired = runBar(pattern, /*density=*/1.0f, /*wild=*/0.0f, /*motion=*/0.0f,
@@ -100,7 +105,7 @@ int main() {
         profile.fill(0.0f);
         profile[2] = 1.0f;
         profile[9] = 1.0f;
-        GroovePattern pattern(0x9abcu, profile);
+        GroovePattern pattern(0x9abcu, &profile, kSlots);
 
         const auto firstBar = runBar(pattern, /*density=*/1.0f, /*wild=*/0.0f, /*motion=*/0.0f,
                                      /*evolutionAmount=*/0.0f);
@@ -118,7 +123,7 @@ int main() {
     {
         GrooveProfiles::AccentProfile profile{};
         profile.fill(1.0f);
-        GroovePattern pattern(0x2468u, profile);
+        GroovePattern pattern(0x2468u, &profile, kSlots);
 
         const auto silentBar = runBar(pattern, /*density=*/0.0f, /*wild=*/0.0f, /*motion=*/0.0f,
                                       /*evolutionAmount=*/0.0f);
@@ -141,8 +146,8 @@ int main() {
     {
         GrooveProfiles::AccentProfile profile{};
         profile.fill(0.0f);
-        GroovePattern silentAtLowWild(0xdef0u, profile);
-        GroovePattern loudAtHighWild(0xdef0u, profile);
+        GroovePattern silentAtLowWild(0xdef0u, &profile, kSlots);
+        GroovePattern loudAtHighWild(0xdef0u, &profile, kSlots);
 
         bool everFiredAtWildZero = false;
         for (int bar = 0; bar < 20; ++bar) {
@@ -163,6 +168,63 @@ int main() {
             }
         }
         assert(alwaysFiredAtWildOne);
+    }
+
+    // Meter change support: setAccentProfile + forceRegenerateNextBoundary
+    // reseats the pattern onto a shorter bar (e.g. 3/4's 12 slots) and the
+    // next boundary regenerates against the new length/profile rather than
+    // reusing the stale 16-slot mask.
+    {
+        GrooveProfiles::AccentProfile profileA{};
+        profileA.fill(1.0f);
+        GroovePattern pattern(0x1357u, &profileA, kSlots);
+        runBar(pattern, /*density=*/1.0f, /*wild=*/0.0f, /*motion=*/0.0f, /*evolutionAmount=*/0.0f);
+
+        GrooveProfiles::AccentProfile profileB{};
+        profileB.fill(0.0f);
+        constexpr int kShorterBar = 12;
+        pattern.setAccentProfile(&profileB, kShorterBar);
+        pattern.forceRegenerateNextBoundary();
+
+        bool everFired = false;
+        for (int slot = 0; slot < kShorterBar; ++slot) {
+            if (tickSlotAndCheckFired(pattern, slot, /*density=*/1.0f, /*wild=*/0.0f, /*motion=*/0.0f,
+                                      /*evolutionAmount=*/0.0f)) {
+                everFired = true;
+            }
+        }
+        assert(!everFired);
+    }
+
+    // GrooveProfiles::generateProfile sanity checks across a non-4/4
+    // meter: Crash fires only the true bar downbeat, Kick fires on every
+    // pulse group's downbeat.
+    {
+        const auto& sevenEight = GrooveProfiles::kMeters[GrooveProfiles::findMeterIndex(7, 8)];
+        assert(sevenEight.totalSlots == 14);
+        assert(sevenEight.groupCount == 3);
+
+        const auto crash = GrooveProfiles::generateProfile(6, sevenEight);
+        assert(crash[0] == 1.0f);
+        for (int s = 1; s < sevenEight.totalSlots; ++s) {
+            assert(crash[static_cast<std::size_t>(s)] < 0.5f);
+        }
+
+        const auto kick = GrooveProfiles::generateProfile(0, sevenEight);
+        int running = 0;
+        for (int g = 0; g < sevenEight.groupCount; ++g) {
+            assert(kick[static_cast<std::size_t>(running)] == 1.0f);
+            running += sevenEight.groupLengths[static_cast<std::size_t>(g)];
+        }
+    }
+
+    // Every supported meter's total slot count matches numerator*16/denominator.
+    {
+        for (const auto& meter : GrooveProfiles::kMeters) {
+            const int expected = meter.numerator * 16 / meter.denominator;
+            assert(meter.totalSlots == expected);
+            assert(meter.totalSlots <= static_cast<int>(GrooveProfiles::kMaxSlotsPerBar));
+        }
     }
 
     std::cout << "GroovePattern tests passed" << std::endl;

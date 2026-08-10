@@ -33,8 +33,23 @@ public:
         float velocity = 1.0f;
     };
 
-    GroovePattern(std::uint32_t seed, const GrooveProfiles::AccentProfile& accentProfile)
-        : random_(seed), accentProfile_(accentProfile) {}
+    GroovePattern(std::uint32_t seed, const GrooveProfiles::AccentProfile* accentProfile,
+                  int activeSlotCount)
+        : random_(seed), accentProfile_(accentProfile), activeSlotCount_(activeSlotCount) {}
+
+    // Called whenever the meter changes — the accent profile (regenerated
+    // by GrooveProfiles::generateProfile for the new meter) and the new
+    // bar's slot count. The caller must also call forceRegenerateNextBoundary()
+    // so the stale mask (sized/shaped for the old meter) isn't reused.
+    void setAccentProfile(const GrooveProfiles::AccentProfile* accentProfile, int activeSlotCount) {
+        accentProfile_ = accentProfile;
+        activeSlotCount_ = activeSlotCount;
+    }
+
+    // Forces a full mask regeneration on the next bar-boundary update(),
+    // regardless of Density/Wild having changed — used when the meter (and
+    // therefore the mask's shape/length) has just changed.
+    void forceRegenerateNextBoundary() { initialized_ = false; }
 
     // Called once per sample, in lockstep with the shared PatternClock's
     // tick() (via onGridBoundary). currentSlot is a shared 0-15
@@ -104,14 +119,14 @@ private:
         const float mutationProbability =
             kBaselineMutationProbability + evolutionAmount * (0.1f + 0.5f * effectiveWild);
 
-        for (std::size_t slot = 0; slot < slotActive_.size(); ++slot) {
+        for (int slot = 0; slot < activeSlotCount_; ++slot) {
             if (paramsChanged || random_.nextFloat01() < mutationProbability) {
                 // lerp(accentProfile[slot], 1.0, effectiveWild) — the
                 // profile fully shapes slot likelihood at wild=0, and its
                 // influence fades to nothing (uniform) at wild=1.
-                const float profileWeight = accentProfile_[slot];
+                const float profileWeight = (*accentProfile_)[static_cast<std::size_t>(slot)];
                 const float slotWeight = profileWeight + (1.0f - profileWeight) * effectiveWild;
-                slotActive_[slot] = random_.nextFloat01() < density * slotWeight;
+                slotActive_[static_cast<std::size_t>(slot)] = random_.nextFloat01() < density * slotWeight;
             }
         }
     }
@@ -120,8 +135,9 @@ private:
     static constexpr float kBaselineMutationProbability = 0.03f;
 
     FastRandom random_;
-    const GrooveProfiles::AccentProfile& accentProfile_;
-    std::array<bool, GrooveProfiles::kSlotsPerBar> slotActive_{};
+    const GrooveProfiles::AccentProfile* accentProfile_;
+    int activeSlotCount_;
+    std::array<bool, GrooveProfiles::kMaxSlotsPerBar> slotActive_{};
     bool initialized_ = false;
     float lastDensity_ = 0.0f;
     float lastEffectiveWild_ = 0.0f;

@@ -108,6 +108,18 @@ public:
                           initial.motion, initial.density, initial.chaos);
     }
 
+    // Generates the starting (4/4) accent profile for all 8 voices — used
+    // to initialize currentMeterProfiles_ before groovePatterns_ (which
+    // holds pointers into it) is constructed.
+    static std::array<GrooveProfiles::AccentProfile, 8> makeInitialMeterProfiles() {
+        std::array<GrooveProfiles::AccentProfile, 8> profiles{};
+        const auto& meter = GrooveProfiles::kMeters[GrooveProfiles::kDefaultMeterIndex];
+        for (std::size_t i = 0; i < profiles.size(); ++i) {
+            profiles[i] = GrooveProfiles::generateProfile(static_cast<int>(i), meter);
+        }
+        return profiles;
+    }
+
     MarmiteAudioProcessor()
         : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo())),
           voices_{makeVoiceModel(kInitialVoices[0]), makeVoiceModel(kInitialVoices[1]),
@@ -118,15 +130,16 @@ public:
                              DrumEvolutionEngine(0xa9c3f501u), DrumEvolutionEngine(0xe1d47b6au),
                              DrumEvolutionEngine(0x2c5f9a3du), DrumEvolutionEngine(0x8b1e64f7u),
                              DrumEvolutionEngine(0xf4d27a19u), DrumEvolutionEngine(0x593bce82u)},
+          currentMeterProfiles_(makeInitialMeterProfiles()),
           groovePatterns_{
-              GroovePattern(0x6a1c2e3du, *GrooveProfiles::kByVoiceIndex[0]),
-              GroovePattern(0x1f4b8d9au, *GrooveProfiles::kByVoiceIndex[1]),
-              GroovePattern(0x9c3e7a2bu, *GrooveProfiles::kByVoiceIndex[2]),
-              GroovePattern(0x5d8f1c4eu, *GrooveProfiles::kByVoiceIndex[3]),
-              GroovePattern(0xb2a6d9c1u, *GrooveProfiles::kByVoiceIndex[4]),
-              GroovePattern(0x37e4f8b0u, *GrooveProfiles::kByVoiceIndex[5]),
-              GroovePattern(0xe1c5a3f7u, *GrooveProfiles::kByVoiceIndex[6]),
-              GroovePattern(0x4a9d2e6cu, *GrooveProfiles::kByVoiceIndex[7]),
+              GroovePattern(0x6a1c2e3du, &currentMeterProfiles_[0], currentMeterSlotCount_),
+              GroovePattern(0x1f4b8d9au, &currentMeterProfiles_[1], currentMeterSlotCount_),
+              GroovePattern(0x9c3e7a2bu, &currentMeterProfiles_[2], currentMeterSlotCount_),
+              GroovePattern(0x5d8f1c4eu, &currentMeterProfiles_[3], currentMeterSlotCount_),
+              GroovePattern(0xb2a6d9c1u, &currentMeterProfiles_[4], currentMeterSlotCount_),
+              GroovePattern(0x37e4f8b0u, &currentMeterProfiles_[5], currentMeterSlotCount_),
+              GroovePattern(0xe1c5a3f7u, &currentMeterProfiles_[6], currentMeterSlotCount_),
+              GroovePattern(0x4a9d2e6cu, &currentMeterProfiles_[7], currentMeterSlotCount_),
           } {
         for (std::size_t i = 0; i < voices_.size(); ++i) {
             const auto& initial = kInitialVoices[i];
@@ -330,6 +343,16 @@ public:
                 wildDisplay_.store(value, std::memory_order_relaxed);
                 wildEvolver_.resync(value);
                 break;
+            // Quantizes onto the fixed set of 7 meters, same idiom as
+            // DelayTime above.
+            case MidiTarget::Meter: {
+                const int index = juce::jlimit(
+                    0, static_cast<int>(GrooveProfiles::kMeters.size()) - 1,
+                    static_cast<int>(value * static_cast<float>(GrooveProfiles::kMeters.size())));
+                requestMeter(GrooveProfiles::kMeters[static_cast<std::size_t>(index)].numerator,
+                             GrooveProfiles::kMeters[static_cast<std::size_t>(index)].denominator);
+                break;
+            }
         }
     }
 
@@ -343,6 +366,13 @@ public:
         // input we already consumed above, then fill it with outgoing
         // GM-note mirrors of this block's pattern triggers below.
         midiMessages.clear();
+
+        const int pendingMeter = pendingMeterIndex_.exchange(-1, std::memory_order_relaxed);
+        if (pendingMeter >= 0) {
+            applyMeterChange(pendingMeter);
+        }
+
+        processHostSync();
 
         auto* left = buffer.getWritePointer(0);
         auto* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : nullptr;
@@ -369,7 +399,8 @@ public:
         for (int sample = 0; sample < numSamples; ++sample) {
             const bool onGridBoundary = playing && patternClock_.tick();
             if (onGridBoundary) {
-                currentSlot16_ = (currentSlot16_ + 1) % static_cast<int>(GrooveProfiles::kSlotsPerBar);
+                currentSlot16_ = (currentSlot16_ + 1) % currentMeterSlotCount_;
+                currentSlot16Display_.store(currentSlot16_, std::memory_order_relaxed);
             }
 
             float mixedLeft = 0.0f;
@@ -507,6 +538,8 @@ public:
         scene.delayFeedback = delayFeedback_.load(std::memory_order_relaxed);
         scene.masterVolume = masterVolume_.load(std::memory_order_relaxed);
         scene.wild = wildDisplay_.load(std::memory_order_relaxed);
+        scene.meterNumerator = meterNumeratorDisplay_.load(std::memory_order_relaxed);
+        scene.meterDenominator = meterDenominatorDisplay_.load(std::memory_order_relaxed);
         return scene;
     }
 
@@ -560,6 +593,7 @@ public:
         masterVolume_.store(scene.masterVolume, std::memory_order_relaxed);
         wildDisplay_.store(scene.wild, std::memory_order_relaxed);
         wildEvolver_.resync(scene.wild);
+        requestMeter(scene.meterNumerator, scene.meterDenominator);
     }
 
     void handlePlayPressed() { isPlaying_.store(true, std::memory_order_relaxed); }
@@ -588,6 +622,8 @@ public:
         // ACDC-rigid end.
         wildDisplay_.store(0.0f, std::memory_order_relaxed);
         wildEvolver_.resync(0.0f);
+        // Same "back to defaults" contract for the time signature.
+        requestMeter(4, 4);
     }
 
     void handleRandomizePressed() {
@@ -786,6 +822,23 @@ public:
         wildEvolver_.resync(value);
     }
 
+    // Queues a meter change, consumed on the audio thread at the top of
+    // the next processBlock (see applyMeterChange) — meter changes touch
+    // non-atomic per-voice arrays, so they can't be applied directly from
+    // the UI/MIDI thread. Falls back to 4/4 if the pair isn't one of the
+    // 7 supported meters.
+    void requestMeter(int numerator, int denominator) {
+        pendingMeterIndex_.store(GrooveProfiles::findMeterIndex(numerator, denominator),
+                                 std::memory_order_relaxed);
+    }
+
+    int meterNumeratorDisplay() const { return meterNumeratorDisplay_.load(std::memory_order_relaxed); }
+    int meterDenominatorDisplay() const { return meterDenominatorDisplay_.load(std::memory_order_relaxed); }
+    int currentSlot16Display() const { return currentSlot16Display_.load(std::memory_order_relaxed); }
+
+    bool hostSyncEnabled() const { return hostSyncEnabled_.load(std::memory_order_relaxed); }
+    void setHostSyncEnabled(bool enabled) { hostSyncEnabled_.store(enabled, std::memory_order_relaxed); }
+
     MidiBindingManager midiBindings_;
     MidiPresetStore midiPresetStore_{
         juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -803,8 +856,99 @@ public:
     juce::String currentSceneName_;
 
 private:
+    // Regenerates every voice's accent profile for the new meter,
+    // reseats each GroovePattern onto it, and forces a fresh mask (the
+    // old one was sized/shaped for the previous meter). Only ever called
+    // from the audio thread (top of processBlock), so no locking needed
+    // around currentMeterProfiles_/groovePatterns_.
+    void applyMeterChange(int meterIndex) {
+        const auto& meter = GrooveProfiles::kMeters[static_cast<std::size_t>(meterIndex)];
+        for (std::size_t i = 0; i < groovePatterns_.size(); ++i) {
+            currentMeterProfiles_[i] = GrooveProfiles::generateProfile(static_cast<int>(i), meter);
+            groovePatterns_[i].setAccentProfile(&currentMeterProfiles_[i], meter.totalSlots);
+            groovePatterns_[i].forceRegenerateNextBoundary();
+        }
+        currentMeterIndex_ = meterIndex;
+        currentMeterSlotCount_ = meter.totalSlots;
+        currentSlot16_ = -1;
+        meterNumeratorDisplay_.store(meter.numerator, std::memory_order_relaxed);
+        meterDenominatorDisplay_.store(meter.denominator, std::memory_order_relaxed);
+    }
+
+    // Reads the host's transport once per block when Host Sync is
+    // enabled: mirrors host Play/Stop into isPlaying_, snaps the pattern
+    // phase to the host's bar position on a transport start (or a large
+    // ppq jump mid-playback, e.g. a host loop point), and continuously
+    // locks tempo to the host's reported BPM. Standalone's playhead never
+    // reports real transport/tempo data, so this is a no-op there even if
+    // somehow left enabled.
+    void processHostSync() {
+        if (!hostSyncEnabled_.load(std::memory_order_relaxed)) {
+            return;
+        }
+        auto* playHead = getPlayHead();
+        if (playHead == nullptr) {
+            return;
+        }
+        const auto position = playHead->getPosition();
+        if (!position.hasValue()) {
+            return;
+        }
+
+        const bool hostPlaying = position->getIsPlaying();
+        bool shouldSnap = false;
+
+        if (hostPlaying && !lastHostPlaying_) {
+            shouldSnap = true;
+        } else if (hostPlaying) {
+            if (const auto ppq = position->getPpqPosition()) {
+                const double barBeats = static_cast<double>(currentMeterSlotCount_) / 4.0;
+                if (hasLastHostPpq_ && (*ppq < lastHostPpq_ - 1.0e-6 || *ppq - lastHostPpq_ > barBeats)) {
+                    shouldSnap = true;
+                }
+                lastHostPpq_ = *ppq;
+                hasLastHostPpq_ = true;
+            }
+        } else {
+            hasLastHostPpq_ = false;
+        }
+
+        if (shouldSnap) {
+            isPlaying_.store(true, std::memory_order_relaxed);
+            const auto ppq = position->getPpqPosition();
+            const auto barStart = position->getPpqPositionOfLastBarStart();
+            if (ppq.hasValue() && barStart.hasValue()) {
+                const double ppqIntoBar = *ppq - *barStart;
+                const int rawSlot = static_cast<int>(ppqIntoBar * 4.0) % currentMeterSlotCount_;
+                const int slot = ((rawSlot % currentMeterSlotCount_) + currentMeterSlotCount_) %
+                                 currentMeterSlotCount_;
+                currentSlot16_ = slot - 1;  // the next tick's ++ lands exactly on `slot`
+                patternClock_.reset();
+                for (auto& pattern : groovePatterns_) {
+                    pattern.forceRegenerateNextBoundary();
+                }
+            }
+        } else if (!hostPlaying && lastHostPlaying_) {
+            isPlaying_.store(false, std::memory_order_relaxed);
+        }
+        lastHostPlaying_ = hostPlaying;
+
+        if (const auto bpm = position->getBpm()) {
+            const float bpmFloat = static_cast<float>(*bpm);
+            tempo_.store(bpmFloat, std::memory_order_relaxed);
+            patternClock_.setBpm(bpmFloat);
+        }
+    }
+
     std::array<VoiceModel, 8> voices_;
     std::array<DrumEvolutionEngine, 8> evolutionEngines_;
+    // Declared (and thus constructed) before currentMeterProfiles_/
+    // groovePatterns_ below, since both depend on it — C++ initializes
+    // members in declaration order regardless of the initializer list's
+    // order.
+    int currentMeterIndex_ = GrooveProfiles::kDefaultMeterIndex;
+    int currentMeterSlotCount_ = GrooveProfiles::kMeters[GrooveProfiles::kDefaultMeterIndex].totalSlots;
+    std::array<GrooveProfiles::AccentProfile, 8> currentMeterProfiles_;
     std::array<GroovePattern, 8> groovePatterns_;
     std::array<SampleVoicePool, 8> samplePools_;
     std::array<SampleBuffer, 8> sampleBuffers_;
@@ -847,13 +991,36 @@ private:
     std::atomic<int> focusedVoiceIndex_{0};
     std::atomic<float> wildDisplay_{0.0f};
     SpaceEvolver wildEvolver_{0x7c2f91du};
-    // Shared 0-15 bar-position counter for GroovePattern — advanced once
-    // per PatternClock grid tick, independent of PatternClock itself
-    // (which stays untouched, only used for its sample-accurate 16th-
-    // note timing). Starts at -1 so the first tick's increment lands on
-    // slot 0, not 1.
+    // Shared 0..(currentMeterSlotCount_-1) bar-position counter for
+    // GroovePattern — advanced once per PatternClock grid tick,
+    // independent of PatternClock itself (which stays untouched, only
+    // used for its sample-accurate 16th-note timing). Starts at -1 so the
+    // first tick's increment lands on slot 0, not 1.
     int currentSlot16_ = -1;
     double sampleRate_ = 44100.0;
+
+    // UI-thread mirror of currentSlot16_/the active meter, for the
+    // beat-pulse indicator and Scene capture — same write-throttle-free
+    // mirror-atomic convention as spaceDisplay_/wildDisplay_ (this is just
+    // an int, negligible cost even written every sample's grid tick).
+    std::atomic<int> currentSlot16Display_{-1};
+    std::atomic<int> meterNumeratorDisplay_{
+        GrooveProfiles::kMeters[GrooveProfiles::kDefaultMeterIndex].numerator};
+    std::atomic<int> meterDenominatorDisplay_{
+        GrooveProfiles::kMeters[GrooveProfiles::kDefaultMeterIndex].denominator};
+    // Meter changes touch non-atomic per-voice arrays (currentMeterProfiles_,
+    // each GroovePattern's mask), so a change requested from the UI/MIDI
+    // thread is queued here and consumed once per block on the audio
+    // thread (applyMeterChange), rather than racing a torn write.
+    std::atomic<int> pendingMeterIndex_{-1};
+
+    // Host transport sync (see requestHostSync()/processBlock). Plain,
+    // audio-thread-only — both are only ever read/written from
+    // processBlock, unlike the cross-thread atomics above.
+    std::atomic<bool> hostSyncEnabled_{false};
+    bool lastHostPlaying_ = false;
+    bool hasLastHostPpq_ = false;
+    double lastHostPpq_ = 0.0;
 
     juce::TimeSliceThread recordingThread_{"Marmite Recording Thread"};
     AudioRecorder recorder_{recordingThread_};

@@ -54,6 +54,17 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
   voice swaps it for your own WAV/AIFF/FLAC/MP3/OGG.
 - **Transport**: Play/Stop gate whether new hits trigger; already-sounding
   hits ring out on their own envelope on Stop rather than cutting abruptly.
+- **Meter**: 4/4, 3/4, 5/4, 6/8, 7/8, 9/8, or 12/8 — every voice's accent
+  profile is regenerated from the new meter's natural pulse grouping (e.g.
+  7/8 as 2+2+3), so Density/Wild/Evolution/Motion all keep working exactly
+  as before regardless of time signature. A beat-pulse light strip under
+  the header shows one light per pulse, first pulse accented.
+- **Host Sync** (AU/VST3 only): an opt-in toggle that makes Play/Stop
+  follow the host DAW's transport (so a count-in before recording starts
+  Marmite on the downbeat too), locks Tempo continuously to the host's
+  tempo, and re-snaps the pattern's phase to the host's bar position on
+  transport start and on host loop points. Off by default; Standalone has
+  no host transport to follow, so the toggle only appears when hosted.
 
 ## Current implementation
 
@@ -74,7 +85,7 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
   `SpaceEvolver` for the global Space macro
 - Effects chain: Reverb (Room/Decay), tempo-synced Delay (Time/Feedback),
   Master Volume
-- Full MIDI Learn (`MidiBindingManager`/`MidiPresetStore`, 33
+- Full MIDI Learn (`MidiBindingManager`/`MidiPresetStore`, 34
   MIDI-bindable targets) and Scenes (`ScenePresetStore`/`SceneState`,
   full-instrument-state snapshots) — ported wholesale from Jerrican's
   preset infrastructure, which is fully data-agnostic
@@ -101,7 +112,8 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
 - [Sources/MarmiteApp/Main.cpp](Sources/MarmiteApp/Main.cpp) — app entrypoint, transport, audio callback, and UI
 - [Sources/MarmiteApp/DrumVoiceModel.h](Sources/MarmiteApp/DrumVoiceModel.h) — per-voice macro state (Volume/Tone/Motion/Density/Chaos)
 - [Sources/MarmiteApp/PatternClock.h](Sources/MarmiteApp/PatternClock.h) — shared sample-accurate tempo grid
-- [Sources/MarmiteApp/GroovePattern.h](Sources/MarmiteApp/GroovePattern.h) / [GrooveProfiles.h](Sources/MarmiteApp/GrooveProfiles.h) — beat-weighted, bar-persistent pattern engine and its per-voice accent-weight data
+- [Sources/MarmiteApp/GroovePattern.h](Sources/MarmiteApp/GroovePattern.h) / [GrooveProfiles.h](Sources/MarmiteApp/GrooveProfiles.h) — beat-weighted, bar-persistent pattern engine; GrooveProfiles also holds the 7 supported time signatures' pulse groupings and generates each voice's accent profile from them
+- [Sources/MarmiteApp/BeatPulseIndicator.h](Sources/MarmiteApp/BeatPulseIndicator.h) — the header's beat-pulse light strip, one light per pulse group of the current meter
 - [Sources/MarmiteApp/SamplePlayer.h](Sources/MarmiteApp/SamplePlayer.h) / [SampleVoicePool.h](Sources/MarmiteApp/SampleVoicePool.h) — polyphonic sample playback
 - [Sources/MarmiteApp/ProceduralKit.h](Sources/MarmiteApp/ProceduralKit.h) — the synthesized default 8-voice kit
 - [Sources/MarmiteApp/DrumEvolutionEngine.h](Sources/MarmiteApp/DrumEvolutionEngine.h) — per-voice autonomous macro drift

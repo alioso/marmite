@@ -60,9 +60,10 @@ enum class MidiTarget {
     DelayFeedback,
     MasterVolume,
     Wild,
+    Meter,
 };
 
-inline constexpr std::array<MidiTarget, 33> kAllMidiTargets{
+inline constexpr std::array<MidiTarget, 34> kAllMidiTargets{
     MidiTarget::VoiceVolume,
     MidiTarget::VoiceTone,
     MidiTarget::VoiceMotion,
@@ -135,6 +136,7 @@ inline const char* midiTargetName(MidiTarget target) {
         case MidiTarget::DelayFeedback: return "DelayFeedback";
         case MidiTarget::MasterVolume: return "MasterVolume";
         case MidiTarget::Wild: return "Wild";
+        case MidiTarget::Meter: return "Meter";
     }
     return "";
 }

@@ -10,6 +10,8 @@
 #include <functional>
 #include <vector>
 
+#include "BeatPulseIndicator.h"
+#include "GrooveProfiles.h"
 #include "MarmiteLookAndFeel.h"
 #include "MarmiteProcessor.h"
 #include "MarmiteTheme.h"
@@ -83,7 +85,16 @@ public:
             "manual control while the rest keep drifting.\n\n"
             "GLOBAL\n"
             "Tempo - the shared clock every voice's grid is measured "
-            "against.\n"
+            "against. As an AU/VST3 plugin with Host Sync enabled (see "
+            "below), this becomes read-only and tracks the host's tempo "
+            "instead.\n"
+            "Meter - the time signature every voice's pattern is built "
+            "against (4/4, 3/4, 5/4, 6/8, 7/8, 9/8, 12/8). Each voice's "
+            "accent profile - and Density/Wild/Evolution/Motion's effect "
+            "on it - is regenerated for the new meter's natural pulse "
+            "grouping (e.g. 7/8 as 2+2+3), rather than switching to a "
+            "hand-tuned alternate pattern. The beat-pulse strip under the "
+            "subtitle shows one light per pulse, first pulse accented.\n"
             "Space - how \"busy\" the whole kit is right now. Autonomously "
             "drifts alongside Evolution Amount/Speed, scaling every "
             "voice's effective Density together, so the ensemble "
@@ -122,6 +133,16 @@ public:
             "pattern instead of - or alongside - Marmite's own kit. "
             "Scenes saves/loads a full snapshot of every knob and toggle "
             "(transport state isn't included).\n\n"
+            "HOST SYNC (AU/VST3 only)\n"
+            "Available only when hosted in a DAW, since Standalone has no "
+            "host transport to follow. When enabled: Play/Stop follows "
+            "the host's transport (so a count-in before recording starts "
+            "Marmite on the downbeat too), Tempo continuously locks to "
+            "the host's tempo, and the pattern's phase re-snaps to the "
+            "host's bar position on transport start and on host loop "
+            "points. Off by default, and not part of Scenes - it's about "
+            "this instance's relationship to its current host, not how "
+            "the instrument sounds.\n\n"
             "RECORDING (Standalone only)\n"
             "Record captures the exact final mix (everything, post-"
             "Reverb) to a timestamped WAV under ~/Music/Marmite "
@@ -870,7 +891,7 @@ public:
             y = layoutSection(perVoiceSectionLabel_, 0, 11, padding, innerContentWidth, y);
             y = layoutSection(voiceSelectSectionLabel_, 11, 19, padding, innerContentWidth, y);
             y = layoutSection(transportSectionLabel_, 19, 23, padding, innerContentWidth, y);
-            y = layoutSection(globalSectionLabel_, 23, 33, padding, innerContentWidth, y);
+            y = layoutSection(globalSectionLabel_, 23, 34, padding, innerContentWidth, y);
             rowsContainer_.setSize(rowsContentWidth, y + padding);
         }
 
@@ -958,6 +979,7 @@ public:
                 case MidiTarget::DelayFeedback: return "Delay Feedback";
                 case MidiTarget::MasterVolume: return "Master Volume";
                 case MidiTarget::Wild: return "Wild";
+                case MidiTarget::Meter: return "Meter";
             }
             return "";
         }
@@ -1027,6 +1049,20 @@ public:
             }
         };
 
+        // Only meaningful once actually hosted in a DAW — Standalone's
+        // playhead never reports real transport/tempo data, so the
+        // toggle would be inert there (see MarmiteProcessor::
+        // processHostSync).
+        addAndMakeVisible(hostSyncButton);
+        hostSyncButton.setButtonText("Host Sync");
+        hostSyncButton.setClickingTogglesState(true);
+        hostSyncButton.setToggleState(processor_.hostSyncEnabled(), juce::dontSendNotification);
+        hostSyncButton.setVisible(processor_.wrapperType != juce::AudioProcessor::wrapperType_Standalone);
+        hostSyncButton.onClick = [this] {
+            processor_.setHostSyncEnabled(hostSyncButton.getToggleState());
+            refreshTempoSliderEnablement();
+        };
+
         addAndMakeVisible(recordButton);
         recordButton.setButtonText("Record");
         recordButton.setClickingTogglesState(false);
@@ -1062,6 +1098,27 @@ public:
         addAndMakeVisible(randomizeButton);
         randomizeButton.setButtonText("Randomize");
         randomizeButton.addListener(this);
+
+        addAndMakeVisible(beatPulseIndicator_);
+
+        addAndMakeVisible(meterLabel);
+        meterLabel.setText("Meter", juce::dontSendNotification);
+        meterLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
+        meterLabel.setColour(juce::Label::textColourId, MarmiteTheme::textSecondary);
+        meterLabel.setJustificationType(juce::Justification::centred);
+
+        addAndMakeVisible(meterBox);
+        for (int i = 0; i < static_cast<int>(GrooveProfiles::kMeters.size()); ++i) {
+            meterBox.addItem(GrooveProfiles::kMeters[static_cast<std::size_t>(i)].label, i + 1);
+        }
+        meterBox.setSelectedId(GrooveProfiles::kDefaultMeterIndex + 1, juce::dontSendNotification);
+        meterBox.onChange = [this] {
+            const int index = meterBox.getSelectedId() - 1;
+            if (index >= 0 && index < static_cast<int>(GrooveProfiles::kMeters.size())) {
+                const auto& meter = GrooveProfiles::kMeters[static_cast<std::size_t>(index)];
+                processor_.requestMeter(meter.numerator, meter.denominator);
+            }
+        };
 
         setUpKnob(tempoSlider, tempoLabel, "Tempo");
         tempoSlider.setRange(40.0, 240.0);
@@ -1163,14 +1220,14 @@ public:
             voiceRows_[i]->refreshSampleLabel(processor_.getSampleFile(i), processor_.isSampleMissing(i));
         }
 
-        setSize(1460, 820);
+        setSize(1520, 820);
         // Fixed-position bottom knob row assumes at least this much room
         // (it runs out to a fixed x, not width-relative — see
         // volumeBlockX in resized()), so shrinking below the design size
         // would clip content. Growing is fine, everything else is
         // already width/height-relative.
         setResizable(true, true);
-        setResizeLimits(1460, 820, 2400, 1400);
+        setResizeLimits(1520, 820, 2400, 1400);
         startTimerHz(30);
     }
 
@@ -1193,6 +1250,15 @@ public:
         scenesButton.setBounds(getWidth() - 232, 32, 70, 24);
         recordButton.setBounds(getWidth() - 322, 32, 80, 24);
         audioSettingsButton.setBounds(getWidth() - 442, 32, 110, 24);
+        // Mutually exclusive with audioSettingsButton/recordButton
+        // (Standalone-only vs. hosted-only), so this can share the same
+        // slot without ever colliding with either.
+        hostSyncButton.setBounds(getWidth() - 442, 32, 110, 24);
+
+        // Sits below the status-label row (y=60-78) and above the voice
+        // grid (gridTop=90 below), narrower than the subtitle so it never
+        // reaches under statusLabel/Open Folder's right-anchored span.
+        beatPulseIndicator_.setBounds(82, 79, getWidth() - 560, 9);
 
         // Status + Open Folder sit on their own line under the header
         // button row, right-anchored over the same span — freed up here
@@ -1231,7 +1297,11 @@ public:
         const int knobBoxTop = bottomY - knobSize - knobTextBoxHeight;
         const int knobLabelTop = knobBoxTop - knobLabelHeight - 2;
 
-        const int tempoBlockX = 420;
+        const int meterBlockX = buttonCol2X + buttonColumnWidth + 30;
+        meterLabel.setBounds(meterBlockX, knobLabelTop, knobColumnWidth, knobLabelHeight);
+        meterBox.setBounds(meterBlockX + 6, knobBoxTop + (knobSize - 24) / 2, knobColumnWidth - 12, 24);
+
+        const int tempoBlockX = meterBlockX + knobColumnWidth + 30;
         tempoLabel.setBounds(tempoBlockX, knobLabelTop, knobColumnWidth, knobLabelHeight);
         tempoSlider.setBounds(tempoBlockX + (knobColumnWidth - knobSize) / 2, knobBoxTop, knobSize,
                               knobSize + knobTextBoxHeight);
@@ -1327,6 +1397,25 @@ public:
         slider.addListener(this);
     }
 
+    // Tempo becomes host-driven (read-only) whenever hosted with Host
+    // Sync enabled — otherwise it's fully manual, same as Standalone
+    // always is (Standalone's playhead never reports real tempo, so the
+    // toggle can't even be shown there).
+    void refreshTempoSliderEnablement() {
+        const bool hosted = processor_.wrapperType != juce::AudioProcessor::wrapperType_Standalone;
+        tempoSlider.setEnabled(!(hosted && processor_.hostSyncEnabled()));
+    }
+
+    // Reflects the meter combo's selection onto whichever GrooveProfiles::
+    // kMeters entry matches (numerator, denominator) — used by both the
+    // 30Hz refresh (meter can change via MIDI) and Scene recall.
+    void refreshMeterBoxSelection(int numerator, int denominator) {
+        const int index = GrooveProfiles::findMeterIndex(numerator, denominator);
+        if (meterBox.getSelectedId() != index + 1) {
+            meterBox.setSelectedId(index + 1, juce::dontSendNotification);
+        }
+    }
+
     // Toggled from the Record button.
     void toggleRecording() {
         if (processor_.isRecording()) {
@@ -1397,6 +1486,8 @@ public:
             }
         }
 
+        refreshMeterBoxSelection(scene.meterNumerator, scene.meterDenominator);
+
         statusLabel.setText("Scene loaded", juce::dontSendNotification);
     }
 
@@ -1434,6 +1525,7 @@ public:
             voiceRows_[i]->refreshSampleLabel(processor_.getSampleFile(i), processor_.isSampleMissing(i));
         }
         refreshGlobalKnobFromAtomic(spaceSlider, processor_.spaceDisplay());
+        meterBox.setSelectedId(GrooveProfiles::kDefaultMeterIndex + 1, juce::dontSendNotification);
         statusLabel.setText("Voices reset to defaults", juce::dontSendNotification);
     }
 
@@ -1530,6 +1622,12 @@ public:
             tempoSlider.setValue(processor_.tempo().load(std::memory_order_relaxed),
                                  juce::dontSendNotification);
         }
+
+        refreshMeterBoxSelection(processor_.meterNumeratorDisplay(), processor_.meterDenominatorDisplay());
+        beatPulseIndicator_.refresh(processor_.meterNumeratorDisplay(),
+                                    processor_.meterDenominatorDisplay(),
+                                    processor_.currentSlot16Display());
+        refreshTempoSliderEnablement();
     }
 
     static void refreshGlobalKnobFromAtomic(juce::Slider& slider, std::atomic<float>& value) {
@@ -1546,7 +1644,11 @@ private:
     juce::Label subtitleLabel;
     juce::TextButton helpButton;
     juce::TextButton audioSettingsButton;
+    juce::TextButton hostSyncButton;
     juce::TextButton recordButton;
+    BeatPulseIndicator beatPulseIndicator_;
+    juce::Label meterLabel;
+    juce::ComboBox meterBox;
     juce::TextButton scenesButton;
     juce::TextButton bindingsButton;
     juce::TextButton playButton;

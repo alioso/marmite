@@ -102,6 +102,8 @@ public:
         file << "global.delayFeedback=" << state.delayFeedback << "\n";
         file << "global.masterVolume=" << state.masterVolume << "\n";
         file << "global.wild=" << state.wild << "\n";
+        file << "global.meterNumerator=" << state.meterNumerator << "\n";
+        file << "global.meterDenominator=" << state.meterDenominator << "\n";
         return file.str();
     }
 
@@ -160,6 +162,8 @@ private:
             else if (field == "delayFeedback") state.delayFeedback = value;
             else if (field == "masterVolume") state.masterVolume = value;
             else if (field == "wild") state.wild = value;
+            else if (field == "meterNumerator") state.meterNumerator = static_cast<int>(value);
+            else if (field == "meterDenominator") state.meterDenominator = static_cast<int>(value);
             return;
         }
 

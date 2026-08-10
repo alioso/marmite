@@ -46,6 +46,11 @@ struct SceneState {
     // complexity curve — see GroovePattern.h. Each voice's Busy knob
     // offsets around this baseline.
     float wild = 0.0f;
+    // Selected time signature — see GrooveProfiles::MeterDef. Stored as an
+    // explicit numerator/denominator pair rather than a list index, so
+    // reordering the meter table later can't corrupt a saved Scene.
+    int meterNumerator = 4;
+    int meterDenominator = 4;
 };
 
 namespace SceneStateDetail {
@@ -79,5 +84,6 @@ inline bool operator==(const SceneState& a, const SceneState& b) {
            nearlyEqual(a.reverbRoom, b.reverbRoom) && nearlyEqual(a.reverbDecay, b.reverbDecay) &&
            nearlyEqual(a.delayBeatFraction, b.delayBeatFraction) &&
            nearlyEqual(a.delayFeedback, b.delayFeedback) &&
-           nearlyEqual(a.masterVolume, b.masterVolume) && nearlyEqual(a.wild, b.wild);
+           nearlyEqual(a.masterVolume, b.masterVolume) && nearlyEqual(a.wild, b.wild) &&
+           a.meterNumerator == b.meterNumerator && a.meterDenominator == b.meterDenominator;
 }

@@ -93,8 +93,8 @@ int main() {
     }
 
     // Target count sanity check: 11 per-voice + 8 voice-select +
-    // 4 transport + 10 global (9 original + Wild) = 33.
-    { assert(kAllMidiTargets.size() == 33); }
+    // 4 transport + 11 global (9 original + Wild + Meter) = 34.
+    { assert(kAllMidiTargets.size() == 34); }
 
     // Name <-> target round-trip, used by preset (de)serialization.
     {
