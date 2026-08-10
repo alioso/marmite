@@ -1099,6 +1099,15 @@ public:
         randomizeButton.setButtonText("Randomize");
         randomizeButton.addListener(this);
 
+        addAndMakeVisible(meterTitleLabel);
+        meterTitleLabel.setText("Meter", juce::dontSendNotification);
+        meterTitleLabel.setFont(juce::Font(juce::FontOptions(13.0f)).withStyle(juce::Font::bold));
+        meterTitleLabel.setColour(juce::Label::textColourId, MarmiteTheme::textPrimary);
+        meterTitleLabel.setJustificationType(juce::Justification::centred);
+
+        // The clock face's needle position doubles as the beat-pulse
+        // indicator — same knob-sized footprint as any other control in
+        // this row, right next to the Meter select.
         addAndMakeVisible(beatPulseIndicator_);
 
         addAndMakeVisible(meterLabel);
@@ -1255,11 +1264,6 @@ public:
         // slot without ever colliding with either.
         hostSyncButton.setBounds(getWidth() - 442, 32, 110, 24);
 
-        // Sits below the status-label row (y=60-78) and above the voice
-        // grid (gridTop=90 below), narrower than the subtitle so it never
-        // reaches under statusLabel/Open Folder's right-anchored span.
-        beatPulseIndicator_.setBounds(82, 79, getWidth() - 560, 9);
-
         // Status + Open Folder sit on their own line under the header
         // button row, right-anchored over the same span — freed up here
         // by moving them off the bottom knob row (see below), which is
@@ -1273,7 +1277,7 @@ public:
 
         const int bottomY = getHeight() - 20;
 
-        constexpr int buttonColumnWidth = 150;
+        constexpr int buttonColumnWidth = 120;
         constexpr int buttonColumnGap = 10;
         constexpr int buttonRowHeight = 36;
         constexpr int buttonRowGap = 8;
@@ -1297,18 +1301,24 @@ public:
         const int knobBoxTop = bottomY - knobSize - knobTextBoxHeight;
         const int knobLabelTop = knobBoxTop - knobLabelHeight - 2;
 
+        const int evolutionTitleTop = knobLabelTop - titleGap - titleHeight;
+
         const int meterBlockX = buttonCol2X + buttonColumnWidth + 30;
+        const int meterBlockWidth = knobColumnWidth * 2;
+        meterTitleLabel.setBounds(meterBlockX, evolutionTitleTop, meterBlockWidth, titleHeight);
         meterLabel.setBounds(meterBlockX, knobLabelTop, knobColumnWidth, knobLabelHeight);
         meterBox.setBounds(meterBlockX + 6, knobBoxTop + (knobSize - 24) / 2, knobColumnWidth - 12, 24);
+        const int beatClockColumnX = meterBlockX + knobColumnWidth;
+        beatPulseIndicator_.setBounds(beatClockColumnX + (knobColumnWidth - knobSize) / 2, knobBoxTop,
+                                      knobSize, knobSize);
 
-        const int tempoBlockX = meterBlockX + knobColumnWidth + 30;
+        const int tempoBlockX = meterBlockX + meterBlockWidth + 30;
         tempoLabel.setBounds(tempoBlockX, knobLabelTop, knobColumnWidth, knobLabelHeight);
         tempoSlider.setBounds(tempoBlockX + (knobColumnWidth - knobSize) / 2, knobBoxTop, knobSize,
                               knobSize + knobTextBoxHeight);
 
         const int evolutionBlockX = tempoBlockX + knobColumnWidth + 30;
         const int evolutionBlockWidth = knobColumnWidth * 4;
-        const int evolutionTitleTop = knobLabelTop - titleGap - titleHeight;
         evolutionTitleLabel.setBounds(evolutionBlockX, evolutionTitleTop, evolutionBlockWidth,
                                       titleHeight);
 
@@ -1646,6 +1656,7 @@ private:
     juce::TextButton audioSettingsButton;
     juce::TextButton hostSyncButton;
     juce::TextButton recordButton;
+    juce::Label meterTitleLabel;
     BeatPulseIndicator beatPulseIndicator_;
     juce::Label meterLabel;
     juce::ComboBox meterBox;

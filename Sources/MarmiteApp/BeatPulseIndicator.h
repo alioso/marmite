@@ -5,63 +5,53 @@
 #include "GrooveProfiles.h"
 #include "MarmiteTheme.h"
 
-// A thin strip of lights, one per pulse group of the current time
-// signature (see GrooveProfiles::MeterDef) — e.g. 4 lights for 4/4, 3 for
-// 7/8's 2+2+3 grouping. The first light (the true downbeat) is always the
-// accent color; whichever light corresponds to the currently-playing
-// pulse group is brightened, the rest sit dim. Polled from the editor's
-// existing 30Hz timerCallback via refresh() rather than owning its own
-// juce::Timer.
+// A simple counter: the current beat number (1..meter numerator — every
+// quarter note in a x/4 meter, every eighth note in a x/8 meter, so 6/8
+// counts 1-6, 12/8 counts 1-12), large and centered. The downbeat (1)
+// displays in the accent color, every other beat in plain text color —
+// no geometry, just a number that counts up and resets. Polled from the
+// editor's existing 30Hz timerCallback via refresh() rather than owning
+// its own juce::Timer.
 class BeatPulseIndicator : public juce::Component {
 public:
     void refresh(int numerator, int denominator, int currentSlot16) {
         const int meterIndex = GrooveProfiles::findMeterIndex(numerator, denominator);
-        const int group = groupForSlot(meterIndex, currentSlot16);
-        if (meterIndex != meterIndex_ || group != activeGroup_) {
+        const int beat = beatForSlot(meterIndex, currentSlot16);
+        if (meterIndex != meterIndex_ || beat != activeBeat_) {
             meterIndex_ = meterIndex;
-            activeGroup_ = group;
+            activeBeat_ = beat;
             repaint();
         }
     }
 
     void paint(juce::Graphics& g) override {
-        const auto& meter = GrooveProfiles::kMeters[static_cast<std::size_t>(meterIndex_)];
-        const int count = meter.groupCount;
-        if (count <= 0) {
+        const auto bounds = getLocalBounds().toFloat();
+        g.setColour(MarmiteTheme::panel);
+        g.fillRoundedRectangle(bounds, 6.0f);
+        g.setColour(MarmiteTheme::panelBorder);
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 6.0f, 1.0f);
+
+        if (activeBeat_ < 0) {
             return;
         }
-
-        constexpr float gap = 6.0f;
-        const float totalGap = gap * static_cast<float>(count - 1);
-        const float lightWidth = (static_cast<float>(getWidth()) - totalGap) / static_cast<float>(count);
-        const float h = static_cast<float>(getHeight());
-
-        for (int i = 0; i < count; ++i) {
-            const float x = static_cast<float>(i) * (lightWidth + gap);
-            const bool isDownbeat = i == 0;
-            juce::Colour colour = isDownbeat ? MarmiteTheme::accent : MarmiteTheme::textSecondary;
-            colour = (i == activeGroup_) ? colour.brighter(0.7f) : colour.withAlpha(0.3f);
-            g.setColour(colour);
-            g.fillRoundedRectangle(x, 0.0f, lightWidth, h, h * 0.3f);
-        }
+        g.setColour(activeBeat_ == 0 ? MarmiteTheme::accent : MarmiteTheme::textPrimary);
+        g.setFont(juce::Font(juce::FontOptions(24.0f)).withStyle(juce::Font::bold));
+        g.drawText(juce::String(activeBeat_ + 1), bounds, juce::Justification::centred);
     }
 
 private:
-    int groupForSlot(int meterIndex, int slot) const {
+    // Every counted beat spans the same number of 16th-note slots —
+    // 16/denominator, which divides evenly for every supported meter
+    // (denominator is always 4 or 8).
+    int beatForSlot(int meterIndex, int slot) const {
         if (slot < 0) {
             return -1;
         }
         const auto& meter = GrooveProfiles::kMeters[static_cast<std::size_t>(meterIndex)];
-        int running = 0;
-        for (int g = 0; g < meter.groupCount; ++g) {
-            running += meter.groupLengths[static_cast<std::size_t>(g)];
-            if (slot < running) {
-                return g;
-            }
-        }
-        return meter.groupCount - 1;
+        const int slotsPerBeat = 16 / meter.denominator;
+        return juce::jlimit(0, meter.numerator - 1, slot / slotsPerBeat);
     }
 
     int meterIndex_ = GrooveProfiles::kDefaultMeterIndex;
-    int activeGroup_ = -1;
+    int activeBeat_ = -1;
 };
