@@ -89,6 +89,29 @@ target_link_libraries(MarmiteApp
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
+# Gathers every built format into a flat, shareable folder — run
+# `cmake --install build --prefix dist --component release` (after
+# configuring with -DCMAKE_BUILD_TYPE=Release, which is what puts
+# output under a Release/ subfolder in the first place) to collect
+# dist/Standalone, dist/VST3, (dist/AU on macOS) with no extra clutter.
+# The explicit COMPONENT is required: JUCE's own add_subdirectory(JUCE)
+# above registers its own (uncomponented) install rules for the whole
+# SDK, which `cmake --install` runs by default unless a specific
+# --component is requested. Addresses each format's subfolder directly
+# (rather than the whole artefacts tree, which also holds JUCE's
+# intermediate JuceLibraryCode/ and a static lib) — this only works
+# cleanly because we always build Release for sharing, so the Release/
+# subfolder name is a safe assumption here specifically.
+foreach(format Standalone VST3 AU)
+    if(format STREQUAL "AU" AND NOT APPLE)
+        continue()
+    endif()
+    install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/MarmiteApp_artefacts/Release/${format}/"
+            DESTINATION "${format}"
+            USE_SOURCE_PERMISSIONS
+            COMPONENT release)
+endforeach()
+
 # Engine classes are plain C++ (no JUCE dependency) so their tests link
 # as bare executables with no JUCE linkage — cheap to build, no app
 # bundle/audio device needed to run them.
