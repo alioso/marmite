@@ -3,18 +3,26 @@ project(Marmite LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# Universal binary: Apple Silicon + Intel in one build.
-set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
-# Oldest macOS an Intel Mac running this is likely to have; also caps what
-# API/SDK surface we can rely on.
-set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")
+if(APPLE)
+    # Universal binary: Apple Silicon + Intel in one build.
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+    # Oldest macOS an Intel Mac running this is likely to have; also caps
+    # what API/SDK surface we can rely on.
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")
+endif()
 
 add_subdirectory(JUCE)
 
-# Standalone + AU + VST3 from one source tree — deliberately excludes
+# Standalone + AU + VST3 on macOS; AU is an Apple-only format, so
+# Windows/Linux builds are Standalone + VST3. Deliberately excludes
 # AUv3/Unity/LV2/VST2 (not targeted). PLUGIN_MANUFACTURER_CODE/PLUGIN_CODE
 # are permanent once shipped (hosts key cached plugin identity off them),
 # so chosen deliberately now rather than left at a JUCE default.
+set(MarmiteApp_FORMATS Standalone VST3)
+if(APPLE)
+    list(APPEND MarmiteApp_FORMATS AU)
+endif()
+
 juce_add_plugin(MarmiteApp
     PRODUCT_NAME "Marmite"
     VERSION "0.1.0"
@@ -22,7 +30,7 @@ juce_add_plugin(MarmiteApp
     BUNDLE_ID "com.albanbailly.marmite"
     PLUGIN_MANUFACTURER_CODE Abal
     PLUGIN_CODE Mrmt
-    FORMATS Standalone AU VST3
+    FORMATS ${MarmiteApp_FORMATS}
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
