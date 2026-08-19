@@ -32,6 +32,7 @@ public:
 
     const std::string& getName() const { return name_; }
     bool isEnabled() const { return enabled_.load(std::memory_order_relaxed); }
+    bool isSoloed() const { return soloed_.load(std::memory_order_relaxed); }
     float getVolume() const { return volume_.load(std::memory_order_relaxed); }
     float getTone() const { return tone_.load(std::memory_order_relaxed); }
     float getMotion() const { return motion_.load(std::memory_order_relaxed); }
@@ -39,6 +40,7 @@ public:
     float getChaos() const { return chaos_.load(std::memory_order_relaxed); }
 
     void setEnabled(bool enabled) { enabled_.store(enabled, std::memory_order_relaxed); }
+    void setSoloed(bool soloed) { soloed_.store(soloed, std::memory_order_relaxed); }
     void setVolume(float volume) { volume_.store(clamp01(volume), std::memory_order_relaxed); }
     void setTone(float tone) { tone_.store(clamp01(tone), std::memory_order_relaxed); }
     void setMotion(float motion) { motion_.store(clamp01(motion), std::memory_order_relaxed); }
@@ -50,6 +52,7 @@ private:
 
     std::string name_;
     std::atomic<bool> enabled_;
+    std::atomic<bool> soloed_{false};
     std::atomic<float> volume_;
     std::atomic<float> tone_;
     std::atomic<float> motion_;

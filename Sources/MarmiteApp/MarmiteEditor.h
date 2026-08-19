@@ -195,6 +195,12 @@ public:
             enabledButton_.setToggleState(voiceRef_.isEnabled(), juce::dontSendNotification);
             enabledButton_.addListener(this);
 
+            addAndMakeVisible(soloButton_);
+            soloButton_.setButtonText("S");
+            soloButton_.setName("soloToggle");
+            soloButton_.setToggleState(voiceRef_.isSoloed(), juce::dontSendNotification);
+            soloButton_.addListener(this);
+
             setUpKnob(volumeSlider_, volumeLabel_, "Volume");
             volumeSlider_.setValue(voiceRef_.getVolume());
             setUpKnob(toneSlider_, toneLabel_, "Tone");
@@ -253,6 +259,7 @@ public:
             const int contentWidth = getWidth() - padding * 2;
 
             nameLabel_.setBounds(padding, padding, contentWidth - 26, 20);
+            soloButton_.setBounds(getWidth() - padding - 38, padding + 1, 18, 18);
             enabledButton_.setBounds(getWidth() - padding - 18, padding + 1, 18, 18);
 
             constexpr int knobCount = 5;
@@ -307,6 +314,8 @@ public:
         void buttonClicked(juce::Button* button) override {
             if (button == &enabledButton_) {
                 voiceRef_.setEnabled(enabledButton_.getToggleState());
+            } else if (button == &soloButton_) {
+                voiceRef_.setSoloed(soloButton_.getToggleState());
             } else if (button == &volumeEvoToggle_) {
                 const bool on = volumeEvoToggle_.getToggleState();
                 evolutionEngineRef_.setVolumeEnabled(on);
@@ -360,6 +369,8 @@ public:
         void refreshFromModel() {
             if (!enabledButton_.isMouseButtonDown())
                 enabledButton_.setToggleState(voiceRef_.isEnabled(), juce::dontSendNotification);
+            if (!soloButton_.isMouseButtonDown())
+                soloButton_.setToggleState(voiceRef_.isSoloed(), juce::dontSendNotification);
             if (!volumeSlider_.isMouseButtonDown())
                 volumeSlider_.setValue(voiceRef_.getVolume(), juce::dontSendNotification);
             if (!toneSlider_.isMouseButtonDown())
@@ -474,6 +485,7 @@ public:
 
         juce::Label nameLabel_;
         juce::ToggleButton enabledButton_;
+        juce::ToggleButton soloButton_;
         juce::Label volumeLabel_, toneLabel_, motionLabel_, densityLabel_, chaosLabel_;
         juce::Slider volumeSlider_, toneSlider_, motionSlider_, densitySlider_, chaosSlider_;
         juce::Label evolutionSectionLabel_;

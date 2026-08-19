@@ -385,6 +385,10 @@ public:
         const float evolutionAmount = evolutionAmount_.load(std::memory_order_relaxed);
         const float evolutionSpeed = evolutionSpeed_.load(std::memory_order_relaxed);
         const float masterVolume = masterVolume_.load(std::memory_order_relaxed);
+        bool anySoloed = false;
+        for (const auto& voice : voices_) {
+            anySoloed = anySoloed || voice.isSoloed();
+        }
 
         const float beatFraction = delayBeatFraction_.load(std::memory_order_relaxed);
         const double samplesPerBeat = patternClock_.getSamplesPerSubdivision() * 4.0;
@@ -416,6 +420,7 @@ public:
 
             for (std::size_t i = 0; i < voices_.size(); ++i) {
                 auto& voice = voices_[i];
+                const bool voiceIsAudible = !anySoloed || voice.isSoloed();
 
                 evolutionEngines_[i].update(voice, playing ? evolutionAmount : 0.0f, evolutionSpeed);
 
@@ -465,8 +470,10 @@ public:
                 }
 
                 const auto voiceSample = samplePools_[i].renderSample();
-                mixedLeft += voiceSample.left;
-                mixedRight += voiceSample.right;
+                if (voiceIsAudible) {
+                    mixedLeft += voiceSample.left;
+                    mixedRight += voiceSample.right;
+                }
             }
 
             delayLine_.processSample(mixedLeft, mixedRight);

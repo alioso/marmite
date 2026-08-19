@@ -116,6 +116,14 @@ public:
         juce::ignoreUnused(shouldDrawButtonAsDown);
 
         const auto bounds = button.getLocalBounds().toFloat().reduced(2.0f);
+        if (button.getName() == "soloToggle") {
+            g.setColour(button.getToggleState() ? MarmiteTheme::accent : MarmiteTheme::trackOff);
+            g.fillRoundedRectangle(bounds, 4.0f);
+            g.setColour(MarmiteTheme::textPrimary);
+            g.setFont(juce::Font(juce::FontOptions(10.0f)).withStyle(juce::Font::bold));
+            g.drawText("S", bounds, juce::Justification::centred);
+            return;
+        }
         const float diameter = std::min(bounds.getWidth(), bounds.getHeight());
         const auto ledBounds = juce::Rectangle<float>(diameter, diameter).withCentre(bounds.getCentre());
 
