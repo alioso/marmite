@@ -19,6 +19,10 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
   voices rolls against its own **Density** on every grid subdivision to
   decide whether to fire, and **Motion** jitters its pitch/velocity — so a
   voice "breathes" instead of repeating identically.
+- **Enabled/Solo**: every voice can be muted (Enabled) or soloed
+  independently; while any voice is soloed, only soloed voices are
+  audible (the rest keep running underneath, just silently) — the same
+  mixer-strip convention as Jerrican.
 - **Beat-weighted, bar-persistent pattern engine** (`GroovePattern`): each
   voice has a per-slot accent profile (Kick favors beats 1/3, Snare favors
   2/4, etc. — see `GrooveProfiles`) shaping which subdivisions it's likely
@@ -29,10 +33,12 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
   100=Squarepusher) setting the room's baseline groove complexity — it
   continuously reshapes how strongly each voice's accent profile is
   honored and how often the pattern mutates, rather than crossfading
-  between fixed presets. Each voice's **Busy** knob offsets that voice's
-  own position on the same curve away from the room (0.5 = follow the
-  room exactly; below/above pulls that one voice calmer/wilder than the
-  rest of the kit).
+  between fixed presets. Wild drifts on its own alongside Evolution
+  Amount/Speed, the same autonomous mechanic Space uses (see below) —
+  it's not just a fixed room baseline you set once. Each voice's **Busy**
+  knob offsets that voice's own position on the same curve away from the
+  room (0.5 = follow the room exactly; below/above pulls that one voice
+  calmer/wilder than the rest of the kit).
 - **Autonomous drift**: every macro (Volume/Tone/Motion/Density/Busy) can
   independently opt in/out of Evolution — occasionally picking a new
   random target and gliding toward it, same mechanic Jerrican uses for its
@@ -51,7 +57,8 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
 - **Sample-based, not purely synthesized**: ships with a procedurally
   synthesized 8-voice default kit (no licensed samples needed, deliberately
   dry and understated rather than polished) — `Load Sample...` on any
-  voice swaps it for your own WAV/AIFF/FLAC/MP3/OGG.
+  voice swaps it for your own WAV/AIFF/FLAC/MP3/OGG; `Clear` reverts that
+  voice back to its procedural default.
 - **Transport**: Play/Stop gate whether new hits trigger; already-sounding
   hits ring out on their own envelope on Stop rather than cutting abruptly.
 - **Meter**: 4/4, 3/4, 5/4, 6/8, 7/8, 9/8, or 12/8 — every voice's accent
@@ -82,10 +89,12 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
 - `ProceduralKit`: 8 default voices (Kick, Snare, Clap, Closed Hat, Open
   Hat, Perc, Crash, Glitch) synthesized in pure C++ math — no third-party
   samples
-- A lock-free `DrumVoiceModel` per voice (atomic enabled/volume/tone/
-  motion/density/chaos, safe to read from the real-time audio thread) and
-  a `DrumEvolutionEngine` per voice for autonomous per-macro drift, plus a
-  `SpaceEvolver` for the global Space macro
+- A lock-free `DrumVoiceModel` per voice (atomic enabled/soloed/volume/
+  tone/motion/density/chaos — the `chaos` field backs the UI's "Busy"
+  knob, safe to read from the real-time audio thread) and a
+  `DrumEvolutionEngine` per voice for autonomous per-macro drift, plus a
+  `SpaceEvolver` for the global Space macro (also reused for Wild's own
+  autonomous drift)
 - Effects chain: Reverb (Room/Decay), tempo-synced Delay (Time/Feedback),
   Master Volume
 - Full MIDI Learn (`MidiBindingManager`/`MidiPresetStore`, 34
@@ -115,7 +124,7 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
 - [CMakeLists.txt](CMakeLists.txt) — CMake entrypoint for the app and all test targets
 - [JUCE/](JUCE/) — vendored JUCE framework (git submodule)
 - [Sources/MarmiteApp/Main.cpp](Sources/MarmiteApp/Main.cpp) — app entrypoint, transport, audio callback, and UI
-- [Sources/MarmiteApp/DrumVoiceModel.h](Sources/MarmiteApp/DrumVoiceModel.h) — per-voice macro state (Volume/Tone/Motion/Density/Chaos)
+- [Sources/MarmiteApp/DrumVoiceModel.h](Sources/MarmiteApp/DrumVoiceModel.h) — per-voice macro state (Volume/Tone/Motion/Density/Busy — the last backed by the `chaos` field internally) plus Enabled/Soloed
 - [Sources/MarmiteApp/PatternClock.h](Sources/MarmiteApp/PatternClock.h) — shared sample-accurate tempo grid
 - [Sources/MarmiteApp/GroovePattern.h](Sources/MarmiteApp/GroovePattern.h) / [GrooveProfiles.h](Sources/MarmiteApp/GrooveProfiles.h) — beat-weighted, bar-persistent pattern engine; GrooveProfiles also holds the 7 supported time signatures' pulse groupings and generates each voice's accent profile from them
 - [Sources/MarmiteApp/BeatPulseIndicator.h](Sources/MarmiteApp/BeatPulseIndicator.h) — the clickable beat counter next to the Meter select
