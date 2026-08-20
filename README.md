@@ -138,30 +138,40 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
 - [Sources/MarmiteApp/AudioRecorder.h](Sources/MarmiteApp/AudioRecorder.h) — background-threaded WAV export of the final mix
 - [Sources/MarmiteApp/FastRandom.h](Sources/MarmiteApp/FastRandom.h) — shared lightweight RNG
 - [Tests/](Tests/) — headless regression tests, one per JUCE-free engine class
-- [build/](build/) — generated build output (gitignored)
+- [build-dev/](build-dev/) — day-to-day dev build output (gitignored)
+- [build-dist/](build-dist/) / [dist/](dist/) — release build tree and installed output (gitignored)
 
 ## Build locally
 
-From the project root:
+Day-to-day development (Debug build, into `build-dev/`):
 
 ```bash
-cmake -S . -B build
-cmake --build build -j4
+./dev          # build + relaunch the Standalone app
+./dev build    # just build, no launch
+./dev test     # build, then run every regression test
 ```
 
-The built app is produced at:
+The dev Standalone app lands at:
 
 ```bash
-build/MarmiteApp_artefacts/Marmite.app
+build-dev/MarmiteApp_artefacts/Debug/Standalone/Marmite.app
 ```
 
-Run the regression tests directly as built binaries, e.g.:
+Release build for distribution (Release build, into `build-dist/`, installed
+to `dist/`) — mirrors the exact steps used for cutting a real release:
 
 ```bash
-./build/DrumVoiceModelTest
-./build/GroovePatternTest
-./build/DrumEvolutionEngineTest
-./build/SpaceEvolverTest
+./release          # macOS
+release.bat        # Windows, from a "x64 Native Tools Command Prompt for VS"
+```
+
+Both pull latest, wipe and reconfigure `build-dist/`, build every format, and
+install into:
+
+```bash
+dist/Standalone/Marmite.app   (or Marmite.exe on Windows)
+dist/AU/Marmite.component     (macOS only)
+dist/VST3/Marmite.vst3
 ```
 
 ## Relationship to Jerrican

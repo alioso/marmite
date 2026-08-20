@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Release build for distribution, into dist/ — separate build tree from
+# ./dev (build-dist vs build-dev) so the two never collide. Wraps the
+# same steps as the Windows release.bat; keep the two in sync if you
+# change this.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+git pull
+rm -rf build-dist dist
+cmake -S . -B build-dist -DCMAKE_BUILD_TYPE=Release
+cmake --build build-dist -j4 --target MarmiteApp_All
+cmake --install build-dist --prefix dist --component release
+
+echo ""
+echo "Done. Release build installed to:"
+echo "  dist/Standalone/Marmite.app"
+echo "  dist/VST3/Marmite.vst3"
+echo "  dist/AU/Marmite.component"
