@@ -23,4 +23,9 @@ inline const juce::Colour trackOff{0xff2a2d2au};
 inline const juce::Colour danger{0xffef4444u};
 inline const juce::Colour dangerDeep{0xffb91c1cu};
 
+// Solo button — matches Jerrican's soloAccent exactly (same "bypass/isolate"
+// blue), another deliberate exception to the single-phosphor-accent rule so
+// Solo reads identically across both apps.
+inline const juce::Colour soloAccent{0xff3b82f6u};
+
 }  // namespace MarmiteTheme

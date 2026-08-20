@@ -56,15 +56,22 @@ public:
         // tick, and interpolating avoids harsh aliasing on the readback.
         const float interpolated = a + (b - a) * frac;
 
-        // A short fade-in avoids a hard click at trigger onset; no
-        // fade-out is applied since the sample's own natural decay
-        // handles that (matches the procedural kit's design — every
-        // default sample already decays to silence on its own).
+        // A short fade-in avoids a hard click at trigger onset. A short
+        // fade-out likewise guards the end: some buffers (e.g. the
+        // procedural Kick, whose decay envelope is still ~5% of full
+        // amplitude when the buffer ends) don't actually reach zero on
+        // their own, so without this the playback head hitting the end
+        // of the buffer is an audible click, not silence.
         float envelope = 1.0f;
         if (fadeInSamplesRemaining_ > 0) {
             envelope = 1.0f - static_cast<float>(fadeInSamplesRemaining_) /
                                    static_cast<float>(kFadeInSamples);
             --fadeInSamplesRemaining_;
+        }
+        const double samplesRemaining =
+            static_cast<double>(buffer_->samples.size()) - 1.0 - position_;
+        if (samplesRemaining < kFadeOutSamples) {
+            envelope *= static_cast<float>(std::max(0.0, samplesRemaining) / kFadeOutSamples);
         }
 
         const float windowed = interpolated * gain_ * envelope;
@@ -75,6 +82,7 @@ public:
 private:
     static constexpr float halfPi = 1.5707963267948966f;
     static constexpr int kFadeInSamples = 32;
+    static constexpr double kFadeOutSamples = 64.0;
 
     const SampleBuffer* buffer_ = nullptr;
     double position_ = 0.0;

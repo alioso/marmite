@@ -117,7 +117,7 @@ public:
 
         const auto bounds = button.getLocalBounds().toFloat().reduced(2.0f);
         if (button.getName() == "soloToggle") {
-            g.setColour(button.getToggleState() ? MarmiteTheme::accent : MarmiteTheme::trackOff);
+            g.setColour(button.getToggleState() ? MarmiteTheme::soloAccent : MarmiteTheme::trackOff);
             g.fillRoundedRectangle(bounds, 4.0f);
             g.setColour(MarmiteTheme::textPrimary);
             g.setFont(juce::Font(juce::FontOptions(10.0f)).withStyle(juce::Font::bold));
