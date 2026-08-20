@@ -2,7 +2,7 @@
 
 #include <string>
 
-// Shared by every preset store (MidiPresetStore, ScenePresetStore) that
+// Shared by every preset store (MidiPresetStore, PresetStore) that
 // turns a free-text, user-typed name (a "Save As..." prompt) directly
 // into part of a filesystem path. Without this, a name like
 // "../../Library/LaunchAgents/x" would resolve outside the intended

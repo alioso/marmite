@@ -67,7 +67,7 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
   as before regardless of time signature. A beat counter next to the Meter
   select counts up through every beat of the bar (6/8 counts 1-6, 12/8
   counts 1-12), the downbeat shown in the accent color; clicking it
-  re-snaps the pattern back to beat 1 without touching any knob or Scene
+  re-snaps the pattern back to beat 1 without touching any knob or Preset
   state.
 - **Host Sync** (AU/VST3 only): an opt-in toggle that makes Play/Stop
   follow the host DAW's transport (so a count-in before recording starts
@@ -98,7 +98,7 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
 - Effects chain: Reverb (Room/Decay), tempo-synced Delay (Time/Feedback),
   Master Volume
 - Full MIDI Learn (`MidiBindingManager`/`MidiPresetStore`, 34
-  MIDI-bindable targets) and Scenes (`ScenePresetStore`/`SceneState`,
+  MIDI-bindable targets) and Presets (`PresetStore`/`PresetState`,
   full-instrument-state snapshots) — ported wholesale from Jerrican's
   preset infrastructure, which is fully data-agnostic
 - MIDI Out: every `GroovePattern` trigger is mirrored as a note on a GM
@@ -134,7 +134,7 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
 - [Sources/MarmiteApp/SpaceEvolver.h](Sources/MarmiteApp/SpaceEvolver.h) — the global Space (ensemble busy-ness) macro
 - [Sources/MarmiteApp/DelayLine.h](Sources/MarmiteApp/DelayLine.h) — tempo-synced feedback delay
 - [Sources/MarmiteApp/MidiBindingManager.h](Sources/MarmiteApp/MidiBindingManager.h) / [MidiPresetStore.h](Sources/MarmiteApp/MidiPresetStore.h) — MIDI Learn and its named presets
-- [Sources/MarmiteApp/SceneState.h](Sources/MarmiteApp/SceneState.h) / [ScenePresetStore.h](Sources/MarmiteApp/ScenePresetStore.h) — full-state Scene snapshots
+- [Sources/MarmiteApp/PresetState.h](Sources/MarmiteApp/PresetState.h) / [PresetStore.h](Sources/MarmiteApp/PresetStore.h) — full-state Preset snapshots
 - [Sources/MarmiteApp/AudioRecorder.h](Sources/MarmiteApp/AudioRecorder.h) — background-threaded WAV export of the final mix
 - [Sources/MarmiteApp/FastRandom.h](Sources/MarmiteApp/FastRandom.h) — shared lightweight RNG
 - [Tests/](Tests/) — headless regression tests, one per JUCE-free engine class
@@ -179,7 +179,7 @@ dist/VST3/Marmite.vst3
 Marmite deliberately reuses Jerrican's proven, domain-generic
 infrastructure rather than rebuilding it: the CMake/JUCE setup, native
 window chrome, the atomic UI-thread/audio-thread pattern, the Evolution
-drift mechanic, and the entire MIDI Learn + Scenes preset system are all
+drift mechanic, and the entire MIDI Learn + Presets preset system are all
 ported with minimal changes. Only the actual instrument engine — grains
 and pitched texture in Jerrican, pattern-scheduled sample hits in Marmite
 — is voice-specific.

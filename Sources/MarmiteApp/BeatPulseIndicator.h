@@ -14,7 +14,7 @@
 // its own juce::Timer. Clicking it fires onClick — the editor wires this
 // to re-snap the pattern's phase back to beat 1, a lightweight "resync
 // the clock" action that's independent of Reset (which reverts every
-// knob to its defaults) or Scene recall.
+// knob to its defaults) or Preset recall.
 class BeatPulseIndicator : public juce::Component {
 public:
     std::function<void()> onClick;

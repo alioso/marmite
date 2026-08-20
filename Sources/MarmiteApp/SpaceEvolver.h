@@ -28,7 +28,7 @@
 // follows.
 //
 // floor/biasExponent shape the autonomous retarget draw (not resync(),
-// which always honors exactly what it's given — a manual/Scene-recalled
+// which always honors exactly what it's given — a manual/Preset-recalled
 // value is a deliberate choice, never reshaped). Both default to the
 // original unshaped behavior (floor=0, biasExponent=1 -> a plain uniform
 // 0..1 draw), so existing callers (Wild) are completely unaffected by

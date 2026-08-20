@@ -6,22 +6,22 @@
 #include <random>
 #include <string>
 
-#include "ScenePresetStore.h"
-#include "SceneState.h"
+#include "PresetStore.h"
+#include "PresetState.h"
 
 namespace {
 
 std::filesystem::path makeTempDir() {
     const auto dir = std::filesystem::temp_directory_path() /
-                     ("marmite_scene_preset_test_" + std::to_string(std::random_device{}()));
+                     ("marmite_preset_preset_test_" + std::to_string(std::random_device{}()));
     std::filesystem::create_directories(dir);
     return dir;
 }
 
-SceneState makeTestScene() {
-    SceneState scene;
-    for (std::size_t i = 0; i < scene.voices.size(); ++i) {
-        auto& voice = scene.voices[i];
+PresetState makeTestPreset() {
+    PresetState preset;
+    for (std::size_t i = 0; i < preset.voices.size(); ++i) {
+        auto& voice = preset.voices[i];
         const float base = static_cast<float>(i) * 0.1f;
         voice.enabled = (i % 2 == 0);
         voice.volume = base + 0.1f;
@@ -41,22 +41,22 @@ SceneState makeTestScene() {
             voice.samplePath = "/Users/test/Music/Samples/voice" + std::to_string(i) + ".wav";
         }
     }
-    scene.tempo = 140.0f;
-    scene.evolutionAmount = 0.42f;
-    scene.evolutionSpeed = 0.77f;
-    scene.space = 0.6f;
-    scene.reverbRoom = 0.33f;
-    scene.reverbDecay = 0.66f;
-    scene.delayBeatFraction = 0.25f;
-    scene.delayFeedback = 0.5f;
-    scene.masterVolume = 0.88f;
-    scene.wild = 0.62f;
-    scene.meterNumerator = 7;
-    scene.meterDenominator = 8;
-    return scene;
+    preset.tempo = 140.0f;
+    preset.evolutionAmount = 0.42f;
+    preset.evolutionSpeed = 0.77f;
+    preset.space = 0.6f;
+    preset.reverbRoom = 0.33f;
+    preset.reverbDecay = 0.66f;
+    preset.delayBeatFraction = 0.25f;
+    preset.delayFeedback = 0.5f;
+    preset.masterVolume = 0.88f;
+    preset.wild = 0.62f;
+    preset.meterNumerator = 7;
+    preset.meterDenominator = 8;
+    return preset;
 }
 
-void assertScenesEqual(const SceneState& a, const SceneState& b) {
+void assertPresetsEqual(const PresetState& a, const PresetState& b) {
     for (std::size_t i = 0; i < a.voices.size(); ++i) {
         const auto& va = a.voices[i];
         const auto& vb = b.voices[i];
@@ -91,25 +91,25 @@ void assertScenesEqual(const SceneState& a, const SceneState& b) {
 
 int main() {
     const auto tempDir = makeTempDir();
-    ScenePresetStore store(tempDir);
+    PresetStore store(tempDir);
 
     assert(store.listPresetNames().empty());
 
     // Save -> load round-trip preserves every field.
     {
-        const auto original = makeTestScene();
+        const auto original = makeTestPreset();
         assert(store.save("Live Set 1", original));
 
-        SceneState loaded;
+        PresetState loaded;
         assert(store.load("Live Set 1", loaded));
-        assertScenesEqual(original, loaded);
+        assertPresetsEqual(original, loaded);
     }
 
     // listPresetNames reflects saved files, sorted.
     {
-        SceneState scene;
-        store.save("Zebra", scene);
-        store.save("Alpha", scene);
+        PresetState preset;
+        store.save("Zebra", preset);
+        store.save("Alpha", preset);
 
         const auto names = store.listPresetNames();
         assert(names.size() == 3);
@@ -131,22 +131,22 @@ int main() {
 
     // Path-traversal attempts are rejected, matching MidiPresetStore.
     {
-        SceneState scene;
-        assert(!store.save("../escape", scene));
-        assert(!store.load("../escape", scene));
+        PresetState preset;
+        assert(!store.save("../escape", preset));
+        assert(!store.load("../escape", preset));
         assert(!store.remove("../escape"));
-        assert(!store.save("nested/name", scene));
+        assert(!store.save("nested/name", preset));
     }
 
     // A malformed value is skipped rather than crashing the loader.
     {
-        const auto malformedPath = tempDir / "Malformed.mscene";
+        const auto malformedPath = tempDir / "Malformed.mpreset";
         std::ofstream malformedFile(malformedPath);
         malformedFile << "voice0.volume=not-a-number\n";
         malformedFile << "global.masterVolume=0.5\n";
         malformedFile.close();
 
-        SceneState loaded;
+        PresetState loaded;
         assert(store.load("Malformed", loaded));
         assert(std::abs(loaded.masterVolume - 0.5f) < 1e-4f);
     }
@@ -155,7 +155,7 @@ int main() {
     // format — confirm it round-trips correctly and doesn't disturb
     // parsing of the numeric fields on neighboring lines.
     {
-        const auto samplePathPath = tempDir / "SamplePath.mscene";
+        const auto samplePathPath = tempDir / "SamplePath.mpreset";
         std::ofstream sampleFile(samplePathPath);
         sampleFile << "voice0.volume=0.75\n";
         sampleFile << "voice0.samplePath=/Users/test/Music/kick.wav\n";
@@ -163,7 +163,7 @@ int main() {
         sampleFile << "voice2.volume=0.25\n";
         sampleFile.close();
 
-        SceneState loaded;
+        PresetState loaded;
         assert(store.load("SamplePath", loaded));
         assert(std::abs(loaded.voices[0].volume - 0.75f) < 1e-4f);
         assert(loaded.voices[0].samplePath == "/Users/test/Music/kick.wav");
@@ -173,8 +173,8 @@ int main() {
 
     // operator== — used by PresetControls to detect dirty/matching state.
     {
-        const auto a = makeTestScene();
-        auto b = makeTestScene();
+        const auto a = makeTestPreset();
+        auto b = makeTestPreset();
         assert(a == b);
 
         b.voices[0].volume += 0.5f;
@@ -214,13 +214,13 @@ int main() {
 
         // Tiny float differences (well within round-trip tolerance) still
         // compare equal.
-        auto c = makeTestScene();
+        auto c = makeTestPreset();
         c.masterVolume += 1e-6f;
         assert(a == c);
     }
 
     std::filesystem::remove_all(tempDir);
 
-    std::cout << "ScenePresetStore tests passed" << std::endl;
+    std::cout << "PresetStore tests passed" << std::endl;
     return 0;
 }

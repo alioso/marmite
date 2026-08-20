@@ -5,19 +5,20 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "PresetNameValidation.h"
-#include "SceneState.h"
+#include "PresetState.h"
 
 // Named full-state-snapshot persistence — same shape and conventions as
-// MidiPresetStore (injected directory, .mscene files, one key=value pair
+// MidiPresetStore (injected directory, .mpreset files, one key=value pair
 // per line, isValidPresetName guard against path traversal, malformed
-// lines skipped rather than crashing), just serializing a SceneState
-// instead of a binding table. Ported from Jerrican's ScenePresetStore.h.
-class ScenePresetStore {
+// lines skipped rather than crashing), just serializing a PresetState
+// instead of a binding table. Ported from Jerrican's PresetStore.h.
+class PresetStore {
 public:
-    explicit ScenePresetStore(std::filesystem::path directory) : directory_(std::move(directory)) {}
+    explicit PresetStore(std::filesystem::path directory) : directory_(std::move(directory)) {}
 
     std::vector<std::string> listPresetNames() const {
         std::vector<std::string> names;
@@ -33,7 +34,7 @@ public:
         return names;
     }
 
-    bool save(const std::string& name, const SceneState& state) const {
+    bool save(const std::string& name, const PresetState& state) const {
         if (!isValidPresetName(name)) {
             return false;
         }
@@ -50,7 +51,7 @@ public:
         return true;
     }
 
-    bool load(const std::string& name, SceneState& state) const {
+    bool load(const std::string& name, PresetState& state) const {
         if (!isValidPresetName(name)) {
             return false;
         }
@@ -66,11 +67,11 @@ public:
         return true;
     }
 
-    // Same key=value text shape as the on-disk .mscene format, exposed so
+    // Same key=value text shape as the on-disk .mpreset format, exposed so
     // MarmiteAudioProcessor::getStateInformation/setStateInformation can
     // reuse it for a plugin instance's own state (a different concern
     // from named preset files, but identical serialization needs).
-    static std::string serialize(const SceneState& state) {
+    static std::string serialize(const PresetState& state) {
         std::ostringstream file;
         for (std::size_t i = 0; i < state.voices.size(); ++i) {
             const auto& voice = state.voices[i];
@@ -107,8 +108,8 @@ public:
         return file.str();
     }
 
-    static SceneState deserialize(const std::string& text) {
-        SceneState state;
+    static PresetState deserialize(const std::string& text) {
+        PresetState state;
         std::istringstream stream(text);
         std::string line;
         while (std::getline(stream, line)) {
@@ -126,8 +127,46 @@ public:
         return std::filesystem::remove(pathFor(name), errorCode);
     }
 
+    // First-run setup, called once from the processor constructor. A
+    // no-op once this store's directory already exists (i.e. every run
+    // after the first), so this only ever does something on a genuinely
+    // fresh install or right after the Scenes->Presets rename:
+    //  1. Migrate any presets left over from the old Scenes/.mscene
+    //     on-disk format, so upgrading doesn't strand saved work.
+    //  2. If nothing was migrated (a true fresh install — e.g. a release
+    //     build handed to someone else), seed the bundled factory
+    //     presets, so the Presets menu isn't empty out of the box.
+    void bootstrapIfEmpty(const std::filesystem::path& legacyDirectory, const char* legacyExtension,
+                          const std::vector<std::pair<std::string, std::string>>& factoryPresets) const {
+        if (std::filesystem::exists(directory_)) {
+            return;
+        }
+        std::error_code errorCode;
+        std::filesystem::create_directories(directory_, errorCode);
+
+        bool migratedAny = false;
+        if (std::filesystem::exists(legacyDirectory)) {
+            for (const auto& entry : std::filesystem::directory_iterator(legacyDirectory)) {
+                if (entry.is_regular_file() && entry.path().extension() == legacyExtension) {
+                    std::filesystem::copy_file(entry.path(), pathFor(entry.path().stem().string()),
+                                                errorCode);
+                    migratedAny = true;
+                }
+            }
+        }
+
+        if (!migratedAny) {
+            for (const auto& [name, contents] : factoryPresets) {
+                std::ofstream file(pathFor(name));
+                if (file.is_open()) {
+                    file << contents;
+                }
+            }
+        }
+    }
+
 private:
-    static constexpr const char* kExtension = ".mscene";
+    static constexpr const char* kExtension = ".mpreset";
 
     std::filesystem::path pathFor(const std::string& name) const {
         return directory_ / (name + kExtension);
@@ -138,7 +177,7 @@ private:
     // attempted, rather than the old shape (parse a float up front, then
     // dispatch by name), which would have thrown on every sample path and
     // silently dropped it via the malformed-line catch below.
-    static void parseLine(const std::string& line, SceneState& state) {
+    static void parseLine(const std::string& line, PresetState& state) {
         const auto equalsPos = line.find('=');
         if (equalsPos == std::string::npos) {
             return;
@@ -210,7 +249,7 @@ private:
         else if (field == "chaosEvoEnabled") voice.chaosEvoEnabled = boolValue;
     }
 
-    // Malformed numeric line (hand-edited or corrupted scene file) — skip
+    // Malformed numeric line (hand-edited or corrupted preset file) — skip
     // it rather than letting stof's exception crash the app.
     static bool parseFloat(const std::string& token, float& out) {
         try {

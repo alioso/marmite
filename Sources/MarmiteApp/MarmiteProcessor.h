@@ -18,14 +18,15 @@
 #include "PatternClock.h"
 #include "ProceduralKit.h"
 #include "SampleVoicePool.h"
-#include "SceneState.h"
-#include "ScenePresetStore.h"
+#include "PresetState.h"
+#include "FactoryPresets.h"
+#include "PresetStore.h"
 #include "SpaceEvolver.h"
 
 class MarmiteAudioProcessorEditor;  // defined in MarmiteEditor.h, included at the bottom.
 
 // Owns every piece of live engine state (voices, groove patterns,
-// evolution, reverb/delay, MIDI Learn/Scenes stores, sample buffers, the
+// evolution, reverb/delay, MIDI Learn/Presets stores, sample buffers, the
 // recorder) and does all audio/MIDI processing — the AudioProcessor half
 // of the Processor/Editor split. Any juce::Component work belongs in
 // MarmiteAudioProcessorEditor instead; this class must stay usable with
@@ -148,6 +149,13 @@ public:
             evolutionEngines_[i].setDensityRange(initial.densityRangeLow, initial.densityRangeHigh);
         }
         audioFormatManager_.registerBasicFormats();
+        presetStore_.bootstrapIfEmpty(
+            juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                .getChildFile("Marmite")
+                .getChildFile("Scenes")
+                .getFullPathName()
+                .toStdString(),
+            ".mscene", factoryPresets());
         recordingThread_.startThread();
     }
 
@@ -505,52 +513,52 @@ public:
     }
 
     void getStateInformation(juce::MemoryBlock& destData) override {
-        const auto text = ScenePresetStore::serialize(captureSceneState());
+        const auto text = PresetStore::serialize(capturePresetState());
         destData.replaceAll(text.data(), text.size());
     }
 
     void setStateInformation(const void* data, int sizeInBytes) override {
         const std::string text(static_cast<const char*>(data), static_cast<size_t>(sizeInBytes));
-        applySceneState(ScenePresetStore::deserialize(text));
+        applyPresetState(PresetStore::deserialize(text));
     }
 
-    // Reads every control's current value — everything a Scene (or a
+    // Reads every control's current value — everything a Preset (or a
     // plugin instance's own save/reload) captures, deliberately excluding
     // transport run/stop state (isPlaying_).
-    SceneState captureSceneState() const {
-        SceneState scene;
+    PresetState capturePresetState() const {
+        PresetState preset;
         for (std::size_t i = 0; i < voices_.size(); ++i) {
             const auto& voice = voices_[i];
             const auto& evolution = evolutionEngines_[i];
-            auto& voiceScene = scene.voices[i];
-            voiceScene.enabled = voice.isEnabled();
-            voiceScene.volume = voice.getVolume();
-            voiceScene.tone = voice.getTone();
-            voiceScene.motion = voice.getMotion();
-            voiceScene.density = voice.getDensity();
-            voiceScene.chaos = voice.getChaos();
-            voiceScene.volumeEvoEnabled = evolution.isVolumeEnabled();
-            voiceScene.toneEvoEnabled = evolution.isToneEnabled();
-            voiceScene.motionEvoEnabled = evolution.isMotionEnabled();
-            voiceScene.densityEvoEnabled = evolution.isDensityEnabled();
-            voiceScene.chaosEvoEnabled = evolution.isChaosEnabled();
-            voiceScene.samplePath = sampleFiles_[i] == juce::File()
+            auto& voicePreset = preset.voices[i];
+            voicePreset.enabled = voice.isEnabled();
+            voicePreset.volume = voice.getVolume();
+            voicePreset.tone = voice.getTone();
+            voicePreset.motion = voice.getMotion();
+            voicePreset.density = voice.getDensity();
+            voicePreset.chaos = voice.getChaos();
+            voicePreset.volumeEvoEnabled = evolution.isVolumeEnabled();
+            voicePreset.toneEvoEnabled = evolution.isToneEnabled();
+            voicePreset.motionEvoEnabled = evolution.isMotionEnabled();
+            voicePreset.densityEvoEnabled = evolution.isDensityEnabled();
+            voicePreset.chaosEvoEnabled = evolution.isChaosEnabled();
+            voicePreset.samplePath = sampleFiles_[i] == juce::File()
                                         ? std::string()
                                         : sampleFiles_[i].getFullPathName().toStdString();
         }
-        scene.tempo = tempo_.load(std::memory_order_relaxed);
-        scene.evolutionAmount = evolutionAmount_.load(std::memory_order_relaxed);
-        scene.evolutionSpeed = evolutionSpeed_.load(std::memory_order_relaxed);
-        scene.space = spaceDisplay_.load(std::memory_order_relaxed);
-        scene.reverbRoom = reverbRoom_.load(std::memory_order_relaxed);
-        scene.reverbDecay = reverbDecay_.load(std::memory_order_relaxed);
-        scene.delayBeatFraction = delayBeatFraction_.load(std::memory_order_relaxed);
-        scene.delayFeedback = delayFeedback_.load(std::memory_order_relaxed);
-        scene.masterVolume = masterVolume_.load(std::memory_order_relaxed);
-        scene.wild = wildDisplay_.load(std::memory_order_relaxed);
-        scene.meterNumerator = meterNumeratorDisplay_.load(std::memory_order_relaxed);
-        scene.meterDenominator = meterDenominatorDisplay_.load(std::memory_order_relaxed);
-        return scene;
+        preset.tempo = tempo_.load(std::memory_order_relaxed);
+        preset.evolutionAmount = evolutionAmount_.load(std::memory_order_relaxed);
+        preset.evolutionSpeed = evolutionSpeed_.load(std::memory_order_relaxed);
+        preset.space = spaceDisplay_.load(std::memory_order_relaxed);
+        preset.reverbRoom = reverbRoom_.load(std::memory_order_relaxed);
+        preset.reverbDecay = reverbDecay_.load(std::memory_order_relaxed);
+        preset.delayBeatFraction = delayBeatFraction_.load(std::memory_order_relaxed);
+        preset.delayFeedback = delayFeedback_.load(std::memory_order_relaxed);
+        preset.masterVolume = masterVolume_.load(std::memory_order_relaxed);
+        preset.wild = wildDisplay_.load(std::memory_order_relaxed);
+        preset.meterNumerator = meterNumeratorDisplay_.load(std::memory_order_relaxed);
+        preset.meterDenominator = meterDenominatorDisplay_.load(std::memory_order_relaxed);
+        return preset;
     }
 
     // Writes a full snapshot back. Touches VoiceModel/EvolutionEngine/
@@ -558,31 +566,31 @@ public:
     // safe from any thread. Any attached editor re-syncs its own
     // Components from these on its next timer tick, so this stays
     // editor-agnostic.
-    void applySceneState(const SceneState& scene) {
+    void applyPresetState(const PresetState& preset) {
         for (std::size_t i = 0; i < voices_.size(); ++i) {
-            const auto& voiceScene = scene.voices[i];
-            voices_[i].setEnabled(voiceScene.enabled);
-            voices_[i].setVolume(voiceScene.volume);
-            voices_[i].setTone(voiceScene.tone);
-            voices_[i].setMotion(voiceScene.motion);
-            voices_[i].setDensity(voiceScene.density);
-            voices_[i].setChaos(voiceScene.chaos);
+            const auto& voicePreset = preset.voices[i];
+            voices_[i].setEnabled(voicePreset.enabled);
+            voices_[i].setVolume(voicePreset.volume);
+            voices_[i].setTone(voicePreset.tone);
+            voices_[i].setMotion(voicePreset.motion);
+            voices_[i].setDensity(voicePreset.density);
+            voices_[i].setChaos(voicePreset.chaos);
 
-            evolutionEngines_[i].resetTo(voiceScene.volume, voiceScene.tone, voiceScene.motion,
-                                         voiceScene.density, voiceScene.chaos);
-            evolutionEngines_[i].setVolumeEnabled(voiceScene.volumeEvoEnabled);
-            evolutionEngines_[i].setToneEnabled(voiceScene.toneEvoEnabled);
-            evolutionEngines_[i].setMotionEnabled(voiceScene.motionEvoEnabled);
-            evolutionEngines_[i].setDensityEnabled(voiceScene.densityEvoEnabled);
-            evolutionEngines_[i].setChaosEnabled(voiceScene.chaosEvoEnabled);
+            evolutionEngines_[i].resetTo(voicePreset.volume, voicePreset.tone, voicePreset.motion,
+                                         voicePreset.density, voicePreset.chaos);
+            evolutionEngines_[i].setVolumeEnabled(voicePreset.volumeEvoEnabled);
+            evolutionEngines_[i].setToneEnabled(voicePreset.toneEvoEnabled);
+            evolutionEngines_[i].setMotionEnabled(voicePreset.motionEvoEnabled);
+            evolutionEngines_[i].setDensityEnabled(voicePreset.densityEvoEnabled);
+            evolutionEngines_[i].setChaosEnabled(voicePreset.chaosEvoEnabled);
 
             // Recall the loaded sample (if any). A path that no longer
             // exists, or that fails to load (moved/corrupted/unsupported
-            // since the Scene was saved), falls back to the procedural
+            // since the Preset was saved), falls back to the procedural
             // default audibly rather than silently breaking, with the
             // editor flagging it so it's not a silent surprise either.
             const juce::File sampleFile =
-                voiceScene.samplePath.empty() ? juce::File() : juce::File(voiceScene.samplePath);
+                voicePreset.samplePath.empty() ? juce::File() : juce::File(voicePreset.samplePath);
             if (sampleFile == juce::File()) {
                 clearSample(i);
             } else if (!sampleFile.existsAsFile() || !applyLoadedSample(i, sampleFile)) {
@@ -590,20 +598,20 @@ public:
             }
         }
 
-        tempo_.store(scene.tempo, std::memory_order_relaxed);
-        patternClock_.setBpm(scene.tempo);
-        evolutionAmount_.store(scene.evolutionAmount, std::memory_order_relaxed);
-        evolutionSpeed_.store(scene.evolutionSpeed, std::memory_order_relaxed);
-        spaceDisplay_.store(scene.space, std::memory_order_relaxed);
-        spaceEvolver_.resync(scene.space);
-        reverbRoom_.store(scene.reverbRoom, std::memory_order_relaxed);
-        reverbDecay_.store(scene.reverbDecay, std::memory_order_relaxed);
-        delayBeatFraction_.store(scene.delayBeatFraction, std::memory_order_relaxed);
-        delayFeedback_.store(scene.delayFeedback, std::memory_order_relaxed);
-        masterVolume_.store(scene.masterVolume, std::memory_order_relaxed);
-        wildDisplay_.store(scene.wild, std::memory_order_relaxed);
-        wildEvolver_.resync(scene.wild);
-        requestMeter(scene.meterNumerator, scene.meterDenominator);
+        tempo_.store(preset.tempo, std::memory_order_relaxed);
+        patternClock_.setBpm(preset.tempo);
+        evolutionAmount_.store(preset.evolutionAmount, std::memory_order_relaxed);
+        evolutionSpeed_.store(preset.evolutionSpeed, std::memory_order_relaxed);
+        spaceDisplay_.store(preset.space, std::memory_order_relaxed);
+        spaceEvolver_.resync(preset.space);
+        reverbRoom_.store(preset.reverbRoom, std::memory_order_relaxed);
+        reverbDecay_.store(preset.reverbDecay, std::memory_order_relaxed);
+        delayBeatFraction_.store(preset.delayBeatFraction, std::memory_order_relaxed);
+        delayFeedback_.store(preset.delayFeedback, std::memory_order_relaxed);
+        masterVolume_.store(preset.masterVolume, std::memory_order_relaxed);
+        wildDisplay_.store(preset.wild, std::memory_order_relaxed);
+        wildEvolver_.resync(preset.wild);
+        requestMeter(preset.meterNumerator, preset.meterDenominator);
     }
 
     void handlePlayPressed() { isPlaying_.store(true, std::memory_order_relaxed); }
@@ -673,7 +681,7 @@ public:
 
     // Returns whether the load succeeded — callable both from the
     // editor's file chooser callback (a fresh user pick) and from
-    // applySceneState (a path recalled from a saved Scene, which might no
+    // applyPresetState (a path recalled from a saved Preset, which might no
     // longer exist or might have changed on disk since). Runs on the
     // message thread; the actual buffer swap is guarded by
     // sampleBuffersMutex_ so the audio thread never reads a buffer
@@ -753,7 +761,7 @@ public:
     }
 
     // Reverts a voice back to its procedural default — used by the Clear
-    // button, Reset, and as the fallback when a Scene references a sample
+    // button, Reset, and as the fallback when a Preset references a sample
     // that's missing/unreadable.
     void clearSample(std::size_t voiceIndex) {
         {
@@ -766,7 +774,7 @@ public:
 
     // Falls back to the procedural default audibly (same buffer swap as
     // clearSample) but keeps the path on record, so a missing/broken
-    // Scene reference reads as an error state (via the editor's
+    // Preset reference reads as an error state (via the editor's
     // refreshSampleLabel) rather than silently reverting with no
     // explanation.
     void markSampleMissing(std::size_t voiceIndex, const juce::File& file) {
@@ -843,7 +851,7 @@ public:
     }
 
     // Re-snaps the pattern back to beat 1 without touching any knob or
-    // Scene state — a lightweight "resync the clock" independent of
+    // Preset state — a lightweight "resync the clock" independent of
     // Reset (which also reverts every voice to its defaults). Clicked
     // from the beat counter itself (see BeatPulseIndicator::onClick).
     // Same queued-request pattern as requestMeter, for the same reason:
@@ -865,14 +873,14 @@ public:
             .getChildFile("MidiPresets")
             .getFullPathName()
             .toStdString()};
-    ScenePresetStore scenePresetStore_{
+    PresetStore presetStore_{
         juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
             .getChildFile("Marmite")
-            .getChildFile("Scenes")
+            .getChildFile("Presets")
             .getFullPathName()
             .toStdString()};
     juce::String currentMidiPresetName_;
-    juce::String currentSceneName_;
+    juce::String currentPresetName_;
 
 private:
     // Snaps back to beat 1 (slot 0) without touching the meter or any
@@ -1030,7 +1038,7 @@ private:
     double sampleRate_ = 44100.0;
 
     // UI-thread mirror of currentSlot16_/the active meter, for the
-    // beat-pulse indicator and Scene capture — same write-throttle-free
+    // beat-pulse indicator and Preset capture — same write-throttle-free
     // mirror-atomic convention as spaceDisplay_/wildDisplay_ (this is just
     // an int, negligible cost even written every sample's grid tick).
     std::atomic<int> currentSlot16Display_{-1};

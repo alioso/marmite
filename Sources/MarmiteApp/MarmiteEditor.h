@@ -17,8 +17,8 @@
 #include "MarmiteTheme.h"
 #include "MidiBindingManager.h"
 #include "MidiPresetStore.h"
-#include "SceneState.h"
-#include "ScenePresetStore.h"
+#include "PresetState.h"
+#include "PresetStore.h"
 
 // For StandalonePluginHolder::getInstance()/showAudioSettingsDialog() —
 // the Audio/MIDI Settings button below only does anything when running
@@ -100,7 +100,7 @@ public:
             "hand-tuned alternate pattern. The counter next to Meter "
             "counts up through every beat of the bar (green on the "
             "downbeat) - click it to re-snap the pattern back to beat 1 "
-            "without touching any knob or Scene state.\n"
+            "without touching any knob or Preset state.\n"
             "Space - how \"busy\" the whole kit is right now. Autonomously "
             "drifts alongside Evolution Amount/Speed, scaling every "
             "voice's effective Density together, so the ensemble "
@@ -126,6 +126,22 @@ public:
             "fixed-level send.\n"
             "Volume - master output level, applied after everything else. "
             "Full by default (unchanged output).\n\n"
+            "PRESETS\n"
+            "The Presets button opens a full-instrument-state library - "
+            "every voice's knobs, loaded sample (if any), and Evolution "
+            "toggles, plus the global Evolution/Space/Wild/Reverb/Delay/"
+            "Volume/Tempo/Meter controls, saved together as one named "
+            "snapshot (Host Sync is the one exception - see below, it's "
+            "session/hosting state, not part of the pattern). Save As "
+            "names and stores the instrument's current state; Override "
+            "updates the currently-loaded preset in place; Delete removes "
+            "it. This is a different thing from Bindings (below) - "
+            "Presets capture what the kit sounds like, Bindings capture "
+            "how your MIDI controller is wired to it; loading a Preset "
+            "never touches your MIDI mappings, and vice versa. Marmite "
+            "ships with one factory preset already in the library the "
+            "first time you launch it, so there's always somewhere to "
+            "start from.\n\n"
             "OUTPUT / MIDI\n"
             "Audio device and MIDI input/output routing are handled "
             "outside this window: in Standalone, via Options > Audio/MIDI "
@@ -139,7 +155,7 @@ public:
             "a GM percussion key (channel 10), so an external drum VST/"
             "hardware module can be driven by the same generative "
             "pattern instead of - or alongside - Marmite's own kit. "
-            "Scenes saves/loads a full snapshot of every knob and toggle "
+            "Presets saves/loads a full snapshot of every knob and toggle "
             "(transport state isn't included).\n\n"
             "HOST SYNC (AU/VST3 only)\n"
             "Available only when hosted in a DAW, since Standalone has no "
@@ -148,7 +164,7 @@ public:
             "Marmite on the downbeat too), Tempo continuously locks to "
             "the host's tempo, and the pattern's phase re-snaps to the "
             "host's bar position on transport start and on host loop "
-            "points. Off by default, and not part of Scenes - it's about "
+            "points. Off by default, and not part of Presets - it's about "
             "this instance's relationship to its current host, not how "
             "the instrument sounds.\n\n"
             "RECORDING (Standalone only)\n"
@@ -503,7 +519,7 @@ public:
     };
 
     // Shared preset row (Combo + Override/Revert/Save As/Delete), used by
-    // both MidiBindingsPopup and ScenesPopup.
+    // both MidiBindingsPopup and PresetsPopup.
     class PresetControls : public juce::Component, private juce::Timer {
     public:
         struct Callbacks {
@@ -516,6 +532,13 @@ public:
             std::function<void()> onDeleted;
             std::function<juce::String()> getCurrentName;
             std::function<void(const juce::String&)> setCurrentName;
+            // Optional — unset (nullptr) means nothing is protected (the
+            // MIDI Bindings popup leaves this unset). When set and it
+            // returns true for the current name, Override and Delete are
+            // both disabled: a factory preset ships with the install, so
+            // the only way to keep your own tweak is Save As under a new
+            // name, never overwriting or removing the original.
+            std::function<bool(const std::string&)> isProtected;
         };
 
         static constexpr int kPreferredHeight = 22 + 6 + 22;
@@ -635,13 +658,15 @@ public:
                 deleteButton_.setEnabled(false);
             } else {
                 const bool matches = callbacks_.matchesNamed(currentName.toStdString());
-                overrideButton_.setVisible(!matches);
-                if (!matches) {
+                const bool protectedPreset =
+                    callbacks_.isProtected && callbacks_.isProtected(currentName.toStdString());
+                overrideButton_.setVisible(!matches && !protectedPreset);
+                if (!matches && !protectedPreset) {
                     overrideButton_.setButtonText("Override \"" + currentName + "\"");
                 }
                 revertButton_.setVisible(enableRevert_ && !matches);
                 saveAsButton_.setEnabled(true);
-                deleteButton_.setEnabled(true);
+                deleteButton_.setEnabled(!protectedPreset);
             }
 
             if (overrideButton_.isVisible() != wasOverrideVisible ||
@@ -753,49 +778,52 @@ public:
         juce::TextButton deleteButton_;
     };
 
-    // Scenes popup, opened from the "Scenes" button.
-    class ScenesPopup : public juce::Component {
+    // Presets popup, opened from the "Presets" button.
+    class PresetsPopup : public juce::Component {
     public:
-        explicit ScenesPopup(MarmiteAudioProcessorEditor* owner)
+        explicit PresetsPopup(MarmiteAudioProcessorEditor* owner)
             : presetControls_(
-                  "Scene",
+                  "Preset",
                   PresetControls::Callbacks{
-                      .listNames = [owner] { return owner->processor_.scenePresetStore_.listPresetNames(); },
+                      .listNames = [owner] { return owner->processor_.presetStore_.listPresetNames(); },
                       .loadNamed =
                           [owner](const std::string& name) {
-                              SceneState scene;
-                              if (!owner->processor_.scenePresetStore_.load(name, scene)) {
+                              PresetState preset;
+                              if (!owner->processor_.presetStore_.load(name, preset)) {
                                   return false;
                               }
-                              owner->applySceneState(scene);
+                              owner->applyPresetState(preset);
                               return true;
                           },
                       .saveNamed =
                           [owner](const std::string& name) {
-                              return owner->processor_.scenePresetStore_.save(name, owner->captureSceneState());
+                              return owner->processor_.presetStore_.save(name, owner->capturePresetState());
                           },
                       .removeNamed = [owner](const std::string& name) {
-                          return owner->processor_.scenePresetStore_.remove(name);
+                          return owner->processor_.presetStore_.remove(name);
                       },
                       .matchesNamed =
                           [owner](const std::string& name) {
-                              SceneState scene;
-                              return owner->processor_.scenePresetStore_.load(name, scene) &&
-                                     scene == owner->captureSceneState();
+                              PresetState preset;
+                              return owner->processor_.presetStore_.load(name, preset) &&
+                                     preset == owner->capturePresetState();
                           },
                       .hasMeaningfulContent = [] { return true; },
                       .onDeleted = [owner] { owner->handleResetPressed(); },
-                      .getCurrentName = [owner] { return owner->processor_.currentSceneName_; },
+                      .getCurrentName = [owner] { return owner->processor_.currentPresetName_; },
                       .setCurrentName = [owner](const juce::String& name) {
-                          owner->processor_.currentSceneName_ = name;
+                          owner->processor_.currentPresetName_ = name;
                       },
+                      .isProtected = [](const std::string& name) { return isFactoryPresetName(name); },
                   },
                   /*enableRevert=*/true) {
             addAndMakeVisible(presetControls_);
 
             addAndMakeVisible(hintLabel_);
-            hintLabel_.setText("Captures every knob/toggle. Transport state isn't included.",
-                               juce::dontSendNotification);
+            hintLabel_.setText(
+                "Captures every knob/toggle. Transport state isn't included. Factory "
+                "presets can't be overridden or deleted - Save As to keep your own version.",
+                juce::dontSendNotification);
             hintLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
             hintLabel_.setColour(juce::Label::textColourId, MarmiteTheme::textSecondary);
             hintLabel_.setJustificationType(juce::Justification::topLeft);
@@ -807,7 +835,7 @@ public:
 
             presetControls_.setBounds(padding, padding, contentWidth, PresetControls::kPreferredHeight);
             hintLabel_.setBounds(padding, padding + PresetControls::kPreferredHeight + 10, contentWidth,
-                                 40);
+                                 56);
         }
 
     private:
@@ -1093,9 +1121,9 @@ public:
         // has no such host, so it's the only place this earns its keep.
         recordButton.setVisible(processor_.wrapperType == juce::AudioProcessor::wrapperType_Standalone);
 
-        addAndMakeVisible(scenesButton);
-        scenesButton.setButtonText("Scenes");
-        scenesButton.onClick = [this] { showScenesPopup(); };
+        addAndMakeVisible(presetsButton);
+        presetsButton.setButtonText("Presets");
+        presetsButton.onClick = [this] { showPresetsPopup(); };
 
         addAndMakeVisible(bindingsButton);
         bindingsButton.setButtonText("Bindings");
@@ -1126,7 +1154,7 @@ public:
         meterTitleLabel.setJustificationType(juce::Justification::centred);
 
         // The beat counter box doubles as a click target: resyncs the
-        // pattern back to beat 1 without touching any knob or Scene
+        // pattern back to beat 1 without touching any knob or Preset
         // state — a quick "resync the clock" independent of Reset.
         addAndMakeVisible(beatPulseIndicator_);
         beatPulseIndicator_.onClick = [this] { processor_.requestPhaseReset(); };
@@ -1270,14 +1298,14 @@ public:
         titleLabel.setBounds(82, 16, 300, 34);
         subtitleLabel.setBounds(82, 48, getWidth() - 340, 22);
 
-        // Header cluster: Help (rightmost), Bindings, Scenes, Record,
+        // Header cluster: Help (rightmost), Bindings, Presets, Record,
         // Audio/MIDI (leftmost) — no Output/MIDI In/Out pickers here,
         // those are the host's/Standalone's job now. Host Sync shares
         // Audio/MIDI's slot (Standalone-only vs. hosted-only, so the two
         // never show at once).
         helpButton.setBounds(getWidth() - 64, 32, 24, 24);
         bindingsButton.setBounds(getWidth() - 152, 32, 80, 24);
-        scenesButton.setBounds(getWidth() - 232, 32, 70, 24);
+        presetsButton.setBounds(getWidth() - 232, 32, 70, 24);
         recordButton.setBounds(getWidth() - 322, 32, 80, 24);
         audioSettingsButton.setBounds(getWidth() - 442, 32, 110, 24);
         // Mutually exclusive with audioSettingsButton/recordButton
@@ -1439,7 +1467,7 @@ public:
 
     // Reflects the meter combo's selection onto whichever GrooveProfiles::
     // kMeters entry matches (numerator, denominator) — used by both the
-    // 30Hz refresh (meter can change via MIDI) and Scene recall.
+    // 30Hz refresh (meter can change via MIDI) and Preset recall.
     void refreshMeterBoxSelection(int numerator, int denominator) {
         const int index = GrooveProfiles::findMeterIndex(numerator, denominator);
         if (meterBox.getSelectedId() != index + 1) {
@@ -1480,26 +1508,26 @@ public:
                                                nullptr);
     }
 
-    void showScenesPopup() {
-        auto content = std::make_unique<ScenesPopup>(this);
-        content->setSize(400, 140);
-        juce::CallOutBox::launchAsynchronously(std::move(content), scenesButton.getScreenBounds(),
+    void showPresetsPopup() {
+        auto content = std::make_unique<PresetsPopup>(this);
+        content->setSize(400, 156);
+        juce::CallOutBox::launchAsynchronously(std::move(content), presetsButton.getScreenBounds(),
                                                nullptr);
     }
 
-    SceneState captureSceneState() const { return processor_.captureSceneState(); }
+    PresetState capturePresetState() const { return processor_.capturePresetState(); }
 
-    // Applies a Scene to the processor, then refreshes every Component
+    // Applies a Preset to the processor, then refreshes every Component
     // that reflects engine state.
-    void applySceneState(const SceneState& scene) {
-        processor_.applySceneState(scene);
+    void applyPresetState(const PresetState& preset) {
+        processor_.applyPresetState(preset);
         for (std::size_t i = 0; i < voiceRows_.size(); ++i) {
             voiceRows_[i]->refreshFromModel();
             voiceRows_[i]->refreshEvolutionToggles();
             voiceRows_[i]->refreshSampleLabel(processor_.getSampleFile(i), processor_.isSampleMissing(i));
         }
 
-        tempoSlider.setValue(scene.tempo, juce::dontSendNotification);
+        tempoSlider.setValue(preset.tempo, juce::dontSendNotification);
         refreshGlobalKnobFromAtomic(evolutionAmountSlider, processor_.evolutionAmount());
         refreshGlobalKnobFromAtomic(evolutionSpeedSlider, processor_.evolutionSpeed());
         refreshGlobalKnobFromAtomic(spaceSlider, processor_.spaceDisplay());
@@ -1511,15 +1539,15 @@ public:
 
         for (int i = 0; i < static_cast<int>(MarmiteAudioProcessor::kDelayDivisions.size()); ++i) {
             if (std::abs(MarmiteAudioProcessor::kDelayDivisions[static_cast<std::size_t>(i)].beatFraction -
-                        scene.delayBeatFraction) < 1e-4f) {
+                        preset.delayBeatFraction) < 1e-4f) {
                 delayTimeBox.setSelectedId(i + 1, juce::dontSendNotification);
                 break;
             }
         }
 
-        refreshMeterBoxSelection(scene.meterNumerator, scene.meterDenominator);
+        refreshMeterBoxSelection(preset.meterNumerator, preset.meterDenominator);
 
-        statusLabel.setText("Scene loaded", juce::dontSendNotification);
+        statusLabel.setText("Preset loaded", juce::dontSendNotification);
     }
 
     void buttonClicked(juce::Button* button) override {
@@ -1681,7 +1709,7 @@ private:
     BeatPulseIndicator beatPulseIndicator_;
     juce::Label meterLabel;
     juce::ComboBox meterBox;
-    juce::TextButton scenesButton;
+    juce::TextButton presetsButton;
     juce::TextButton bindingsButton;
     juce::TextButton playButton;
     juce::TextButton stopButton;
