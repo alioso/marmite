@@ -12,6 +12,20 @@ cmake -S . -B build-dist -DCMAKE_BUILD_TYPE=Release
 cmake --build build-dist -j4 --target MarmiteApp_All
 cmake --install build-dist --prefix dist --component release
 
+# JUCE's VST3 post-build step signs the bundle, then regenerates
+# moduleinfo.json afterward — that reorders things so the code signature's
+# sealed-resources list no longer matches what's on disk ("a sealed
+# resource is missing or invalid"). AU comes out of the build with no
+# signature at all. Standalone launches fine either way (a user
+# double-clicking their own unnotarized app isn't the same check a host
+# does when loading a plugin bundle), but a host like Ableton verifying
+# the bundle before loading it can reject a broken seal outright — which
+# is exactly what happened testing this. Re-signing after install repairs
+# the seal for real.
+codesign --force --deep -s - --timestamp=none "dist/VST3/Marmite.vst3"
+codesign --force --deep -s - --timestamp=none "dist/AU/Marmite.component"
+codesign --force --deep -s - --timestamp=none "dist/Standalone/Marmite.app"
+
 echo ""
 echo "Done. Release build installed to:"
 echo "  dist/Standalone/Marmite.app"
