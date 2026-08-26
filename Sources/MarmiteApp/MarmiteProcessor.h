@@ -55,7 +55,10 @@ public:
 
     // Rough "basic rock kit" starting point: Kick/Snare locked to the
     // grid (chaos=0) at a quarter/backbeat-ish density, hats busier,
-    // Crash rare, Glitch deliberately leaning into chaos by identity.
+    // Crash rare, Tom moderate and fill-leaning (see GrooveProfiles'
+    // turnaround-fill placement for it) — Density was left near-silent
+    // (0.06) back when this slot was Glitch, which read as "does
+    // nothing"; raised to make the voice's presence obvious by default.
     // Order matches ProceduralKit::makeDefaultKit.
     static constexpr std::array<InitialDrumVoice, 8> kInitialVoices{{
         {"Kick", true, 0.9f, 0.5f, 0.1f, 0.25f, 0.0f, 0.10f, 0.45f},
@@ -65,7 +68,7 @@ public:
         {"Open Hat", true, 0.45f, 0.5f, 0.2f, 0.1f, 0.15f, 0.0f, 0.3f},
         {"Perc", true, 0.4f, 0.5f, 0.3f, 0.2f, 0.3f, 0.0f, 0.5f},
         {"Crash", true, 0.55f, 0.5f, 0.2f, 0.03f, 0.1f, 0.0f, 0.15f},
-        {"Glitch", true, 0.35f, 0.5f, 0.4f, 0.06f, 0.7f, 0.0f, 0.6f},
+        {"Tom", true, 0.5f, 0.5f, 0.3f, 0.18f, 0.5f, 0.05f, 0.5f},
     }};
 
     // GM percussion key per voice (order matches kInitialVoices/
@@ -80,7 +83,7 @@ public:
         46,  // Open Hat — Open Hi-Hat
         47,  // Perc — Low-Mid Tom
         49,  // Crash — Crash Cymbal 1
-        37,  // Glitch — Side Stick (closest GM stand-in for a non-kit voice)
+        48,  // Tom — Hi-Mid Tom
     };
     static constexpr int kMidiDrumChannel = 10;
 

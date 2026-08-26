@@ -327,39 +327,43 @@ inline SampleBuffer makeCrash(double sampleRate) {
     return buffer;
 }
 
-// Dry and short, same family as the hats/perc — no pitched content at
-// all. A crude bitcrush (sample-and-hold downsampling) on band-limited
-// noise gives it a digital, skipping quality on its own, without a
-// tone underneath doing the work.
-inline SampleBuffer makeGlitch(double sampleRate) {
+// A pitched, resonant tom — same pitch-swept-sine technique as the Kick
+// (see makeKick) but tuned higher and shorter: a clear "boom" with real
+// tonal presence, meant to read unmistakably against the rest of the kit
+// rather than blend into it. Was previously a bitcrushed-noise "Glitch"
+// voice, but at its low default Density and with no pitched content of
+// its own to anchor the ear, it read as inaudible/absent in practice —
+// a tom gives this slot in the kit something the ear can actually latch
+// onto.
+inline SampleBuffer makeTom(double sampleRate) {
     SampleBuffer buffer;
     buffer.sampleRate = sampleRate;
-    const int length = detail::samplesFor(sampleRate, 0.07);
+    const int length = detail::samplesFor(sampleRate, 0.22);
     buffer.samples.resize(static_cast<std::size_t>(length));
 
-    detail::WarmNoise noise(0xd45a1c9u, 0.6);
     detail::Crackle crackle(0x3ac91f7u);
-    constexpr int holdSamples = 5;  // crude bitcrush via sample-and-hold
-    const int attackSamples = detail::samplesFor(sampleRate, 0.0004);
-    float held = 0.0f;
+    detail::Wobble wobble(0xd45a1c9u);
+    const int attackSamples = detail::samplesFor(sampleRate, 0.0015);
+    double phase = 0.0;
     for (int i = 0; i < length; ++i) {
-        if (i % holdSamples == 0) {
-            held = static_cast<float>(noise.next());
-        }
         const double t = static_cast<double>(i) / sampleRate;
-        const double amp = std::exp(-t * 70.0) * detail::softAttack(i, attackSamples);
+        const double freq = 90.0 + 140.0 * std::exp(-t * 28.0) + wobble.next() * 3.0;
+        phase += freq * detail::kTwoPi / sampleRate;
+        const double amp = std::exp(-t * 14.0) * detail::softAttack(i, attackSamples);
+        const double harmonic = std::sin(phase * 2.0) * 0.15;
+        const double body = detail::softSaturate(std::sin(phase) + harmonic, 1.15) * amp * 0.85;
         buffer.samples[static_cast<std::size_t>(i)] =
-            static_cast<float>(held * amp + crackle.next() * amp);
+            static_cast<float>(body + crackle.next() * amp);
     }
     return buffer;
 }
 
 // Order matches the 8-voice kit: Kick, Snare, Clap, Closed Hat, Open
-// Hat, Perc, Crash, Glitch.
+// Hat, Perc, Crash, Tom.
 inline std::array<SampleBuffer, 8> makeDefaultKit(double sampleRate) {
     return {makeKick(sampleRate),      makeSnare(sampleRate),   makeClap(sampleRate),
             makeClosedHat(sampleRate), makeOpenHat(sampleRate), makePerc(sampleRate),
-            makeCrash(sampleRate),     makeGlitch(sampleRate)};
+            makeCrash(sampleRate),     makeTom(sampleRate)};
 }
 
 }  // namespace ProceduralKit

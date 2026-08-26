@@ -14,7 +14,7 @@
 // Voice order matches the established 8-voice kit ordering used
 // throughout the engine (MarmiteProcessor.h's kInitialVoices,
 // ProceduralKit::makeDefaultKit): Kick, Snare, Clap, Closed Hat, Open
-// Hat, Perc, Crash, Glitch.
+// Hat, Perc, Crash, Tom.
 //
 // Rather than one hand-authored 16-slot table per voice per meter (7
 // meters x 8 voices = 56 tables to keep in sync by ear), each meter
@@ -23,9 +23,10 @@
 // sixteenths) — and generateProfile() derives each voice's character
 // from that grouping: Kick on group downbeats, Snare/Clap on the
 // backbeat groups, hats broad/off-beat, Crash on the true bar downbeat
-// only, Perc/Glitch meter-agnostic and flat. This keeps every voice's
-// personality consistent across all 7 supported meters without hand
-// re-tuning each one.
+// only, Perc meter-agnostic and flat, Tom pulled toward a turnaround
+// fill in the bar's last group. This keeps every voice's personality
+// consistent across all 7 supported meters without hand re-tuning each
+// one.
 namespace GrooveProfiles {
 
 inline constexpr std::size_t kMaxSlotsPerBar = 24;  // 12/8, the longest supported bar
@@ -82,7 +83,7 @@ inline std::array<int, kMaxPulseGroups> groupStarts(const MeterDef& meter) {
 }  // namespace detail
 
 // voiceIndex order: 0=Kick, 1=Snare, 2=Clap, 3=ClosedHat, 4=OpenHat,
-// 5=Perc, 6=Crash, 7=Glitch. Only entries [0, meter.totalSlots) of the
+// 5=Perc, 6=Crash, 7=Tom. Only entries [0, meter.totalSlots) of the
 // returned profile are meaningful; trailing slots are left at baseline
 // and never read by GroovePattern.
 inline AccentProfile generateProfile(int voiceIndex, const MeterDef& meter) {
@@ -140,10 +141,22 @@ inline AccentProfile generateProfile(int voiceIndex, const MeterDef& meter) {
             profile[0] = 1.0f;
             break;
         }
-        default: {  // Glitch: flat, already-noisy-by-identity, meter-agnostic.
-            for (int s = 0; s < n; ++s) profile[static_cast<std::size_t>(s)] = (s % 2 == 0) ? 0.45f : 0.4f;
+        case 7: {  // Tom: a light baseline through the bar, pulled strongly
+                   // toward the last pulse group — the classic "roll into
+                   // the next bar" turnaround-fill placement.
+            for (int s = 0; s < n; ++s) profile[static_cast<std::size_t>(s)] = 0.12f;
+            if (meter.groupCount > 0) {
+                const int lastGroup = meter.groupCount - 1;
+                const int start = starts[static_cast<std::size_t>(lastGroup)];
+                const int len = meter.groupLengths[static_cast<std::size_t>(lastGroup)];
+                for (int s = start; s < start + len; ++s) {
+                    profile[static_cast<std::size_t>(s)] = 0.6f;
+                }
+            }
             break;
         }
+        default:
+            break;
     }
     return profile;
 }

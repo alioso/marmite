@@ -87,7 +87,7 @@ syncopation to Squarepusher/Aphex-Twin-style glitch chaos.
   playback with pitch-shift and fade-in, same pooling/normalization
   approach as Jerrican's `GrainCloud`)
 - `ProceduralKit`: 8 default voices (Kick, Snare, Clap, Closed Hat, Open
-  Hat, Perc, Crash, Glitch) synthesized in pure C++ math — no third-party
+  Hat, Perc, Crash, Tom) synthesized in pure C++ math — no third-party
   samples
 - A lock-free `DrumVoiceModel` per voice (atomic enabled/soloed/volume/
   tone/motion/density/chaos — the `chaos` field backs the UI's "Busy"

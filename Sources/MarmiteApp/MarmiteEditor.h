@@ -689,7 +689,7 @@ public:
                     if (result != 1 || safeThis == nullptr) {
                         return;
                     }
-                    const auto name = window->getTextEditorContents("name");
+                    const auto name = window->getTextEditorContents("name").trim();
                     if (name.isEmpty()) {
                         return;
                     }
@@ -806,7 +806,7 @@ public:
                           [owner](const std::string& name) {
                               PresetState preset;
                               return owner->processor_.presetStore_.load(name, preset) &&
-                                     preset == owner->capturePresetState();
+                                     matchesIgnoringEvolutionDrift(preset, owner->capturePresetState());
                           },
                       .hasMeaningfulContent = [] { return true; },
                       .onDeleted = [owner] { owner->handleResetPressed(); },
@@ -1180,6 +1180,10 @@ public:
 
         setUpKnob(tempoSlider, tempoLabel, "Tempo");
         tempoSlider.setRange(40.0, 240.0);
+        // Whole BPM only — the shared knob setup defaults to 2 decimal
+        // places for its usual 0..1 knobs, which read as meaningless
+        // precision ("110.00") on a tempo dial.
+        tempoSlider.setNumDecimalPlacesToDisplay(0);
         tempoSlider.setValue(processor_.tempo().load(std::memory_order_relaxed));
 
         addAndMakeVisible(evolutionTitleLabel);
@@ -1259,7 +1263,14 @@ public:
         masterVolumeTitleLabel.setJustificationType(juce::Justification::centred);
 
         setUpKnob(masterVolumeSlider, masterVolumeLabel, "");
-        masterVolumeSlider.setRange(0.0, 1.0);
+        // The mix has a fixed 0.5x (-6dB) headroom pad built in before this
+        // knob is applied (see MarmiteAudioProcessor::processBlock) — 1.0
+        // used to be the top of this range, meaning the knob could never
+        // actually reach unity gain on the raw mix, only ever attenuate it
+        // further. 2.0 lets it fully recover that pad at most (1.0 * 2.0 *
+        // 0.5 headroom = the unpadded mix level) rather than boosting past
+        // what the mix was already capable of.
+        masterVolumeSlider.setRange(0.0, 2.0);
         masterVolumeSlider.setValue(processor_.masterVolume().load(std::memory_order_relaxed));
 
         addAndMakeVisible(statusLabel);

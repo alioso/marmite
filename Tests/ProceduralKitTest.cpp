@@ -36,7 +36,7 @@ int main() {
     checkSample(ProceduralKit::makeClap(sampleRate));
     checkSample(ProceduralKit::makePerc(sampleRate));
     checkSample(ProceduralKit::makeCrash(sampleRate));
-    checkSample(ProceduralKit::makeGlitch(sampleRate));
+    checkSample(ProceduralKit::makeTom(sampleRate));
 
     const auto kit = ProceduralKit::makeDefaultKit(sampleRate);
     assert(kit.size() == 8);
