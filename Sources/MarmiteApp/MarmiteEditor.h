@@ -1068,7 +1068,7 @@ public:
         titleLabel.setColour(juce::Label::textColourId, MarmiteTheme::textPrimary);
 
         addAndMakeVisible(subtitleLabel);
-        subtitleLabel.setText("A generative drum machine by Alban Bailly",
+        subtitleLabel.setText("A generative drum machine",
                               juce::dontSendNotification);
         subtitleLabel.setFont(juce::Font(juce::FontOptions(16.0f)));
         subtitleLabel.setJustificationType(juce::Justification::centredLeft);
