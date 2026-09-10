@@ -10,6 +10,18 @@ if(APPLE)
     # what API/SDK surface we can rely on.
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")
 endif()
+if(MSVC)
+    # Statically link the MSVC runtime. Without this, the built .exe/
+    # .vst3 depends on the Visual C++ Redistributable being installed on
+    # whatever machine loads it — present on any dev machine (Visual
+    # Studio/Build Tools installs it), which is exactly why this went
+    # unnoticed testing here, but a plugin handed to someone without VS
+    # installed can fail to load silently. Several hosts (FL Studio
+    # included) don't surface that as an error — they just drop the
+    # plugin from the scanned list entirely, which looks exactly like
+    # "the VST never showed up." (Found via the same issue on Jerrican.)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 add_subdirectory(JUCE)
 
